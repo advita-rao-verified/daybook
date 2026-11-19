@@ -88,11 +88,21 @@ struct PositionedTask: View {
     }
 
     private func openSeriesEditor() {
-        if let original = store.tasks.first(where: {
+        guard let original = store.tasks.first(where: {
             $0.id == task.id
-        }) {
-            edit(original)
+        }) else {
+            return
         }
+
+        var selectedOccurrence = original
+
+        if original.repeatsWeekly {
+            selectedOccurrence.occurrenceDate =
+                task.occurrenceDate
+                ?? Calendar.current.startOfDay(for: day)
+        }
+
+        edit(selectedOccurrence)
     }
 
     var body: some View {

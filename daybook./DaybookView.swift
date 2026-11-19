@@ -71,7 +71,7 @@ struct DaybookView: View {
             TaskEditor(
                 task: request.task,
                 initialDate: selectedDate,
-                occurrenceDate: request.task?.occurrenceDate,                save: { updated in
+                occurrenceDate: request.task?.occurrenceDate,              save: { updated in
                     store.save(updated)
                     closeEditor()
                 },
