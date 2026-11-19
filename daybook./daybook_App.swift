@@ -473,7 +473,9 @@ struct CalendarTimeline: View {
     let edit: (CalendarTask) -> Void
 
     private let gutter: CGFloat = 64
-    private let hourHeight: CGFloat = 76
+    private var hourHeight: CGFloat {
+        days.count <= 2 ? 100 : 76
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -730,6 +732,7 @@ struct PositionedTask: View {
 
 // MARK: - CALENDAR TASK CARD
 
+
 struct TaskCalendarCard: View {
     let task: CalendarTask
     let compact: Bool
@@ -737,83 +740,183 @@ struct TaskCalendarCard: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let width = geometry.size.width
+            let height = geometry.size.height
+
+            let isLarge = width >= 390
+            let isMedium = width >= 230
+            let isTiny = width < 150
+
+            let titleSize: CGFloat =
+                isLarge ? 20 : (isMedium ? 16 : 12)
+
+            let timeSize: CGFloat =
+                isLarge ? 15 : (isMedium ? 13 : 10)
+
+            let subtaskSize: CGFloat =
+                isLarge ? 15 : (isMedium ? 13 : 10)
+
+            let rowHeight: CGFloat =
+                isLarge ? 34 : (isMedium ? 28 : 22)
+
+            let padding: CGFloat =
+                isLarge ? 18 : (isMedium ? 13 : 9)
+
+            let reservedHeight: CGFloat =
+                padding * 2 +
+                (isLarge ? 100 : (isMedium ? 85 : 68))
+
+            let availableHeight = max(
+                0,
+                height - reservedHeight
+            )
+
+            let maxRows = Int(
+                availableHeight / rowHeight
+            )
+
+            let total = task.subtasks.count
+
+            let visibleCount = calculateVisibleCount(
+                total: total,
+                capacity: maxRows
+            )
+
+            let remaining = total - visibleCount
+
             HStack(spacing: 0) {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(task.color)
-                    .frame(width: 4)
+                    .frame(width: isLarge ? 6 : 4)
 
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(alignment: .top) {
+                VStack(
+                    alignment: .leading,
+                    spacing: isLarge ? 12 : 7
+                ) {
+                    HStack(alignment: .top, spacing: 6) {
                         Text(task.title)
                             .font(.system(
-                                size: compact ? 11 : 14,
+                                size: titleSize,
                                 weight: .semibold
                             ))
                             .lineLimit(2)
 
-                        Spacer(minLength: 2)
+                        Spacer(minLength: 0)
 
-                        if !compact && geometry.size.height > 70 {
+                        if !isTiny && height > 65 {
                             Image(systemName: "chevron.down")
-                                .font(.system(size: 10))
-                                .foregroundStyle(Noir.muted)
+                                .font(.system(size: 11))
+                                .foregroundStyle(
+                                    Noir.pale.opacity(0.7)
+                                )
                         }
                     }
 
-                    if geometry.size.height > 35 {
+                    if height > 35 {
                         Text(
                             task.start.label("HH:mm") +
                             " – " +
                             task.end.label("HH:mm")
                         )
-                        .font(.system(size: compact ? 9 : 11))
-                        .foregroundStyle(Noir.pale.opacity(0.8))
+                        .font(.system(size: timeSize))
+                        .foregroundStyle(
+                            Noir.pale.opacity(0.8)
+                        )
                     }
 
-                    if !task.subtasks.isEmpty &&
-                        geometry.size.height > 100 {
+                    if total > 0 && height > 95 {
+                        HStack(spacing: 9) {
+                            GeometryReader { bar in
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(
+                                            task.color.opacity(0.18)
+                                        )
 
-                        progressBar
-
-                        let previewCount = compact ? 2 : 4
-
-                        ForEach(
-                            Array(task.subtasks.prefix(previewCount))
-                        ) { subtask in
-                            HStack(spacing: 6) {
-                                Image(systemName:
-                                    subtask.isDone
-                                    ? "checkmark.square"
-                                    : "square"
-                                )
-                                .foregroundStyle(
-                                    subtask.isDone
-                                    ? task.color : Noir.pale
-                                )
-
-                                Text(subtask.title)
-                                    .lineLimit(1)
-                                    .strikethrough(subtask.isDone)
-                                    .foregroundStyle(
-                                        subtask.isDone
-                                        ? Noir.muted : Noir.pale
-                                    )
+                                    Capsule()
+                                        .fill(task.color)
+                                        .frame(
+                                            width: bar.size.width *
+                                                task.progress
+                                        )
+                                }
                             }
-                            .font(.system(size: compact ? 9 : 11))
+                            .frame(height: isLarge ? 7 : 5)
+
+                            if !isTiny {
+                                Text(
+                                    "\(task.completedCount)/\(total)"
+                                )
+                                .font(.system(
+                                    size: isLarge ? 12 : 10
+                                ))
+                                .foregroundStyle(Noir.muted)
+                            }
                         }
 
-                        if task.subtasks.count > previewCount {
-                            Text(
-                                "+\(task.subtasks.count - previewCount) more"
-                            )
-                            .font(.system(size: 9))
-                            .foregroundStyle(Noir.muted)
+                        VStack(
+                            alignment: .leading,
+                            spacing: isLarge ? 9 : 5
+                        ) {
+                            ForEach(
+                                Array(
+                                    task.subtasks.prefix(visibleCount)
+                                )
+                            ) { subtask in
+                                HStack(
+                                    alignment: .center,
+                                    spacing: isLarge ? 11 : 7
+                                ) {
+                                    Image(
+                                        systemName: subtask.isDone
+                                        ? "checkmark.square"
+                                        : "square"
+                                    )
+                                    .font(.system(
+                                        size: subtaskSize + 2
+                                    ))
+                                    .foregroundStyle(
+                                        subtask.isDone
+                                        ? task.color
+                                        : Noir.pale
+                                    )
+
+                                    Text(subtask.title)
+                                        .font(.system(
+                                            size: subtaskSize,
+                                            weight: .medium
+                                        ))
+                                        .lineLimit(1)
+                                        .strikethrough(
+                                            subtask.isDone
+                                        )
+                                        .foregroundStyle(
+                                            subtask.isDone
+                                            ? Noir.muted
+                                            : Noir.pale
+                                        )
+
+                                    Spacer(minLength: 0)
+                                }
+                                .frame(
+                                    height: rowHeight -
+                                        (isLarge ? 9 : 5)
+                                )
+                            }
+
+                            if remaining > 0 {
+                                Text("+\(remaining) more")
+                                    .font(.system(
+                                        size: isLarge ? 12 : 10
+                                    ))
+                                    .foregroundStyle(Noir.muted)
+                            }
                         }
                     }
 
                     Spacer(minLength: 0)
                 }
-                .padding(9)
+                .padding(padding)
 
                 Spacer(minLength: 0)
             }
@@ -822,38 +925,35 @@ struct TaskCalendarCard: View {
                 maxHeight: .infinity
             )
             .background(task.color.opacity(0.28))
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .clipShape(
+                RoundedRectangle(cornerRadius: 7)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: 7)
-                    .stroke(task.color.opacity(0.25))
+                    .stroke(
+                        task.color.opacity(0.25),
+                        lineWidth: 1
+                    )
             }
         }
     }
 
-    private var progressBar: some View {
-        HStack(spacing: 6) {
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(task.color.opacity(0.22))
+    private func calculateVisibleCount(
+        total: Int,
+        capacity: Int
+    ) -> Int {
+        guard total > 0 else { return 0 }
 
-                    Capsule()
-                        .fill(task.color)
-                        .frame(
-                            width: geometry.size.width * task.progress
-                        )
-                }
-            }
-            .frame(height: 5)
-
-            Text(
-                "\(task.completedCount)/\(task.subtasks.count)"
-            )
-            .font(.system(size: 9))
-            .foregroundStyle(Noir.muted)
+        if capacity >= total {
+            return total
         }
+
+        // Reserve one row for "+N more" only
+        // when some subtasks cannot fit.
+        return max(0, capacity - 1)
     }
 }
+
 
 // MARK: - EXPANDED CHECKLIST PANEL
 
