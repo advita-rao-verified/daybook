@@ -6,24 +6,25 @@
 //
 
 
+
 import SwiftUI
 import Combine
 
-// MARK: - APP
+// MARK: - NOIR APP
 
 @main
 struct DaybookApp: App {
     var body: some Scene {
         WindowGroup {
             DaybookView()
-                .frame(minWidth: 950, minHeight: 650)
                 .preferredColorScheme(.dark)
+                .frame(minWidth: 950, minHeight: 650)
         }
         .defaultSize(width: 1350, height: 850)
     }
 }
 
-// MARK: - COLORS
+// MARK: - THEME
 
 enum Noir {
     static let background = Color(hex: "#101013")
@@ -131,7 +132,6 @@ struct CalendarTask: Identifiable, Codable {
         return Double(completedCount) / Double(subtasks.count)
     }
 
-    // Backward-compatible decoding for older saved tasks.
     enum CodingKeys: String, CodingKey {
         case id, title, start, end, colorHex, notes, subtasks
     }
@@ -156,19 +156,22 @@ struct CalendarTask: Identifiable, Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+
         id = try c.decode(UUID.self, forKey: .id)
         title = try c.decode(String.self, forKey: .title)
         start = try c.decode(Date.self, forKey: .start)
         end = try c.decode(Date.self, forKey: .end)
         colorHex = try c.decode(String.self, forKey: .colorHex)
-        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        notes = try c.decodeIfPresent(
+            String.self, forKey: .notes
+        ) ?? ""
         subtasks = try c.decodeIfPresent(
             [Subtask].self, forKey: .subtasks
         ) ?? []
     }
 }
 
-// MARK: - STORAGE
+// MARK: - PERSISTENT STORAGE
 
 final class TaskStore: ObservableObject {
     @Published var tasks: [CalendarTask] = [] {
@@ -210,66 +213,62 @@ final class TaskStore: ObservableObject {
     }
 
     func toggleSubtask(taskID: UUID, subtaskID: UUID) {
-        guard let taskIndex = tasks.firstIndex(where: {
+        guard let i = tasks.firstIndex(where: {
             $0.id == taskID
         }),
-        let subIndex = tasks[taskIndex].subtasks.firstIndex(where: {
+        let j = tasks[i].subtasks.firstIndex(where: {
             $0.id == subtaskID
         }) else { return }
 
-        tasks[taskIndex].subtasks[subIndex].isDone.toggle()
+        tasks[i].subtasks[j].isDone.toggle()
     }
 
     func addSubtask(to taskID: UUID, title: String) {
-        let cleaned = title.trimmingCharacters(
+        let clean = title.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
-        guard !cleaned.isEmpty,
-              let index = tasks.firstIndex(where: {
+
+        guard !clean.isEmpty,
+              let i = tasks.firstIndex(where: {
                   $0.id == taskID
               }) else { return }
 
-        tasks[index].subtasks.append(
-            Subtask(title: cleaned)
-        )
+        tasks[i].subtasks.append(Subtask(title: clean))
     }
 
     func deleteSubtask(taskID: UUID, subtaskID: UUID) {
-        guard let index = tasks.firstIndex(where: {
+        guard let i = tasks.firstIndex(where: {
             $0.id == taskID
         }) else { return }
 
-        tasks[index].subtasks.removeAll {
-            $0.id == subtaskID
-        }
+        tasks[i].subtasks.removeAll { $0.id == subtaskID }
     }
 
     func tasks(on day: Date) -> [CalendarTask] {
         let cal = Calendar.current
         let start = cal.startOfDay(for: day)
-        let end = cal.date(
-            byAdding: .day, value: 1, to: start
-        )!
+        let end = cal.date(byAdding: .day, value: 1, to: start)!
 
         return tasks.filter {
             $0.start < end && $0.end > start
-        }.sorted { $0.start < $1.start }
+        }
+        .sorted { $0.start < $1.start }
     }
 }
 
 // MARK: - DATE HELPERS
 
 extension Date {
-    func addDays(_ amount: Int) -> Date {
+    func addDays(_ n: Int) -> Date {
         Calendar.current.date(
-            byAdding: .day, value: amount, to: self
+            byAdding: .day, value: n, to: self
         ) ?? self
     }
 
     func label(_ format: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = format
-        return formatter.string(from: self)
+        let f = DateFormatter()
+        f.dateFormat = format
+        return f.string(from: self)
     }
 
     var monday: Date {
@@ -296,7 +295,7 @@ enum CalendarMode: String, CaseIterable {
     case month = "Month"
 }
 
-// MARK: - MAIN SCREEN
+// MARK: - MAIN VIEW
 
 struct DaybookView: View {
     @StateObject private var store = TaskStore()
@@ -439,7 +438,6 @@ struct DaybookView: View {
             }
         }
         .padding(22)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func navigate(_ direction: Int) {
@@ -472,7 +470,8 @@ struct CalendarTimeline: View {
     @ObservedObject var store: TaskStore
     let edit: (CalendarTask) -> Void
 
-    private let gutter: CGFloat = 64
+    private let gutter: CGFloat = 70
+
     private var hourHeight: CGFloat {
         days.count <= 2 ? 100 : 76
     }
@@ -497,11 +496,15 @@ struct CalendarTimeline: View {
                         HourGrid(
                             width: geometry.size.width,
                             gutter: gutter,
-                            hourHeight: hourHeight
+                            hourHeight: hourHeight,
+                            showNow: days.contains {
+                                Calendar.current.isDateInToday($0)
+                            }
                         )
 
                         HStack(alignment: .top, spacing: 0) {
-                            Color.clear.frame(width: gutter)
+                            Color.clear
+                                .frame(width: gutter)
 
                             ForEach(days, id: \.self) { day in
                                 DayColumn(
@@ -526,9 +529,8 @@ struct CalendarTimeline: View {
                 }
                 .frame(height: 24 * hourHeight)
             }
-            .frame(maxHeight: .infinity)
         }
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(maxHeight: .infinity)
     }
 
     private var dateHeaders: some View {
@@ -561,14 +563,33 @@ struct CalendarTimeline: View {
     }
 }
 
-// MARK: - GRID
+// MARK: - HOUR GRID AND LIVE TIME
 
 struct HourGrid: View {
     let width: CGFloat
     let gutter: CGFloat
     let hourHeight: CGFloat
+    let showNow: Bool
 
     var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            ZStack(alignment: .topLeading) {
+                gridLines
+
+                if showNow {
+                    currentTimeMarker(context.date)
+                }
+            }
+            .frame(
+                width: width,
+                height: 24 * hourHeight,
+                alignment: .topLeading
+            )
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var gridLines: some View {
         ZStack(alignment: .topLeading) {
             ForEach(0...24, id: \.self) { hour in
                 HStack(spacing: 0) {
@@ -590,12 +611,46 @@ struct HourGrid: View {
                 .offset(y: CGFloat(hour) * hourHeight)
             }
         }
-        .frame(
-            width: width,
-            height: 24 * hourHeight,
-            alignment: .topLeading
-        )
-        .allowsHitTesting(false)
+    }
+
+    private func currentTimeMarker(_ now: Date) -> some View {
+        let cal = Calendar.current
+        let hour = cal.component(.hour, from: now)
+        let minute = cal.component(.minute, from: now)
+        let second = cal.component(.second, from: now)
+
+        let y = (
+            CGFloat(hour) +
+            CGFloat(minute) / 60 +
+            CGFloat(second) / 3600
+        ) * hourHeight
+
+        return ZStack(alignment: .topLeading) {
+            HStack(spacing: 4) {
+                Text(now.label("h:mm"))
+                    .font(.system(
+                        size: 10, weight: .semibold
+                    ))
+                    .monospacedDigit()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .foregroundStyle(Noir.accent)
+            .frame(
+                width: gutter - 3,
+                alignment: .trailing
+            )
+            .offset(y: y - 7)
+
+            Rectangle()
+                .fill(Noir.accent.opacity(0.9))
+                .frame(
+                    width: max(0, width - gutter),
+                    height: 1.5
+                )
+                .offset(x: gutter, y: y)
+        }
     }
 
     private func hourText(_ hour: Int) -> String {
@@ -637,7 +692,7 @@ struct DayColumn: View {
     }
 }
 
-// MARK: - POSITIONED TASK
+// MARK: - TASK POSITIONING
 
 struct PositionedTask: View {
     let task: CalendarTask
@@ -656,7 +711,9 @@ struct PositionedTask: View {
 
     private var dayEnd: Date {
         Calendar.current.date(
-            byAdding: .day, value: 1, to: dayStart
+            byAdding: .day,
+            value: 1,
+            to: dayStart
         )!
     }
 
@@ -691,7 +748,11 @@ struct PositionedTask: View {
     }
 
     private var slotWidth: CGFloat {
-        max(1, (width - 8) / CGFloat(max(1, overlapping.count)))
+        max(
+            1,
+            (width - 8) /
+            CGFloat(max(1, overlapping.count))
+        )
     }
 
     private var horizontalOffset: CGFloat {
@@ -703,259 +764,246 @@ struct PositionedTask: View {
     }
 
     var body: some View {
-        TaskCalendarCard(
-            task: task,
-            compact: slotWidth < 190,
-            edit: { edit(task) }
-        )
-        .frame(
-            width: max(1, slotWidth - 3),
-            height: blockHeight
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            expanded = true
-        }
-        .popover(isPresented: $expanded, arrowEdge: .trailing) {
-            ExpandedTaskPanel(
-                taskID: task.id,
-                store: store,
-                edit: {
-                    expanded = false
-                    edit(task)
-                }
+        TaskCalendarCard(task: task)
+            .frame(
+                width: max(1, slotWidth - 3),
+                height: blockHeight,
+                alignment: .topLeading
             )
-        }
-        .offset(x: horizontalOffset, y: top + 2)
+            .clipped()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                expanded = true
+            }
+            .popover(
+                isPresented: $expanded,
+                arrowEdge: .trailing
+            ) {
+                ExpandedTaskPanel(
+                    taskID: task.id,
+                    store: store,
+                    edit: {
+                        expanded = false
+                        edit(task)
+                    }
+                )
+            }
+            .offset(
+                x: horizontalOffset,
+                y: top + 2
+            )
     }
 }
 
-// MARK: - CALENDAR TASK CARD
-
+// MARK: - FIXED TASK CARD
 
 struct TaskCalendarCard: View {
     let task: CalendarTask
-    let compact: Bool
-    let edit: () -> Void
 
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
             let height = geometry.size.height
 
-            let isLarge = width >= 390
-            let isMedium = width >= 230
-            let isTiny = width < 150
+            let large = width >= 390
+            let medium = width >= 230
+            let tiny = height < 55
 
-            let titleSize: CGFloat =
-                isLarge ? 20 : (isMedium ? 16 : 12)
+            let inset: CGFloat = large ? 18 : (medium ? 13 : 8)
+            let titleSize: CGFloat = large ? 19 : (medium ? 15 : 12)
+            let timeSize: CGFloat = large ? 14 : (medium ? 12 : 10)
+            let rowSize: CGFloat = large ? 15 : (medium ? 12 : 10)
+            let rowHeight: CGFloat = large ? 32 : (medium ? 27 : 23)
 
-            let timeSize: CGFloat =
-                isLarge ? 15 : (isMedium ? 13 : 10)
+            let titleLines = height >= 110 ? 3 : (height >= 65 ? 2 : 1)
 
-            let subtaskSize: CGFloat =
-                isLarge ? 15 : (isMedium ? 13 : 10)
+            let headerHeight: CGFloat =
+                CGFloat(titleLines) * (titleSize + 4) +
+                (tiny ? 0 : timeSize + 13) +
+                inset * 2 + 14
 
-            let rowHeight: CGFloat =
-                isLarge ? 34 : (isMedium ? 28 : 22)
+            let hasProgress =
+                !task.subtasks.isEmpty &&
+                height >= headerHeight + 18
 
-            let padding: CGFloat =
-                isLarge ? 18 : (isMedium ? 13 : 9)
-
-            let reservedHeight: CGFloat =
-                padding * 2 +
-                (isLarge ? 100 : (isMedium ? 85 : 68))
-
-            let availableHeight = max(
+            let remainingHeight = max(
                 0,
-                height - reservedHeight
+                height - headerHeight -
+                (hasProgress ? 20 : 0)
             )
 
-            let maxRows = Int(
-                availableHeight / rowHeight
+            let rowCapacity = Int(
+                remainingHeight / rowHeight
             )
 
             let total = task.subtasks.count
 
-            let visibleCount = calculateVisibleCount(
-                total: total,
-                capacity: maxRows
-            )
+            let visibleCount: Int = {
+                if rowCapacity >= total {
+                    return total
+                }
+                return max(0, rowCapacity - 1)
+            }()
 
-            let remaining = total - visibleCount
+            let hiddenCount = total - visibleCount
 
-            HStack(spacing: 0) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(task.color)
-                    .frame(width: isLarge ? 6 : 4)
+            ZStack(alignment: .topLeading) {
+                task.color.opacity(0.25)
 
-                VStack(
-                    alignment: .leading,
-                    spacing: isLarge ? 12 : 7
-                ) {
-                    HStack(alignment: .top, spacing: 6) {
+                HStack(spacing: 0) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(task.color)
+                        .frame(width: large ? 6 : 4)
+
+                    VStack(
+                        alignment: .leading,
+                        spacing: 0
+                    ) {
                         Text(task.title)
                             .font(.system(
                                 size: titleSize,
                                 weight: .semibold
                             ))
-                            .lineLimit(2)
+                            .foregroundStyle(.white)
+                            .lineLimit(titleLines)
+                            .multilineTextAlignment(.leading)
+                            .frame(
+                                maxWidth: .infinity,
+                                alignment: .leading
+                            )
 
-                        Spacer(minLength: 0)
-
-                        if !isTiny && height > 65 {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 11))
-                                .foregroundStyle(
-                                    Noir.pale.opacity(0.7)
-                                )
+                        if !tiny {
+                            Text(
+                                task.start.label("HH:mm") +
+                                " – " +
+                                task.end.label("HH:mm")
+                            )
+                            .font(.system(size: timeSize))
+                            .foregroundStyle(
+                                Noir.pale.opacity(0.8)
+                            )
+                            .padding(.top, 6)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                         }
-                    }
 
-                    if height > 35 {
-                        Text(
-                            task.start.label("HH:mm") +
-                            " – " +
-                            task.end.label("HH:mm")
-                        )
-                        .font(.system(size: timeSize))
-                        .foregroundStyle(
-                            Noir.pale.opacity(0.8)
-                        )
-                    }
+                        if hasProgress {
+                            HStack(spacing: 8) {
+                                GeometryReader { bar in
+                                    ZStack(alignment: .leading) {
+                                        Capsule()
+                                            .fill(
+                                                task.color.opacity(0.2)
+                                            )
 
-                    if total > 0 && height > 95 {
-                        HStack(spacing: 9) {
-                            GeometryReader { bar in
-                                ZStack(alignment: .leading) {
-                                    Capsule()
-                                        .fill(
-                                            task.color.opacity(0.18)
-                                        )
-
-                                    Capsule()
-                                        .fill(task.color)
-                                        .frame(
-                                            width: bar.size.width *
-                                                task.progress
-                                        )
+                                        Capsule()
+                                            .fill(task.color)
+                                            .frame(
+                                                width: bar.size.width *
+                                                    task.progress
+                                            )
+                                    }
                                 }
-                            }
-                            .frame(height: isLarge ? 7 : 5)
+                                .frame(height: 5)
 
-                            if !isTiny {
                                 Text(
                                     "\(task.completedCount)/\(total)"
                                 )
-                                .font(.system(
-                                    size: isLarge ? 12 : 10
-                                ))
+                                .font(.system(size: 10))
                                 .foregroundStyle(Noir.muted)
                             }
-                        }
+                            .frame(height: 12)
+                            .padding(.top, 12)
+                            .padding(.bottom, 8)
 
-                        VStack(
-                            alignment: .leading,
-                            spacing: isLarge ? 9 : 5
-                        ) {
-                            ForEach(
-                                Array(
-                                    task.subtasks.prefix(visibleCount)
-                                )
-                            ) { subtask in
-                                HStack(
-                                    alignment: .center,
-                                    spacing: isLarge ? 11 : 7
-                                ) {
-                                    Image(
-                                        systemName: subtask.isDone
-                                        ? "checkmark.square"
-                                        : "square"
+                            VStack(
+                                alignment: .leading,
+                                spacing: 0
+                            ) {
+                                ForEach(
+                                    Array(
+                                        task.subtasks.prefix(visibleCount)
                                     )
-                                    .font(.system(
-                                        size: subtaskSize + 2
-                                    ))
-                                    .foregroundStyle(
-                                        subtask.isDone
-                                        ? task.color
-                                        : Noir.pale
-                                    )
-
-                                    Text(subtask.title)
-                                        .font(.system(
-                                            size: subtaskSize,
-                                            weight: .medium
-                                        ))
-                                        .lineLimit(1)
-                                        .strikethrough(
-                                            subtask.isDone
+                                ) { subtask in
+                                    HStack(spacing: 8) {
+                                        Image(
+                                            systemName: subtask.isDone
+                                            ? "checkmark.square"
+                                            : "square"
                                         )
+                                        .font(.system(
+                                            size: rowSize + 1
+                                        ))
                                         .foregroundStyle(
                                             subtask.isDone
-                                            ? Noir.muted
-                                            : Noir.pale
+                                            ? task.color : Noir.pale
                                         )
 
+                                        Text(subtask.title)
+                                            .font(.system(
+                                                size: rowSize
+                                            ))
+                                            .lineLimit(1)
+                                            .strikethrough(
+                                                subtask.isDone
+                                            )
+                                            .foregroundStyle(
+                                                subtask.isDone
+                                                ? Noir.muted
+                                                : Noir.pale
+                                            )
+
+                                        Spacer(minLength: 0)
+                                    }
+                                    .frame(
+                                        height: rowHeight,
+                                        alignment: .leading
+                                    )
                                     Spacer(minLength: 0)
                                 }
-                                .frame(
-                                    height: rowHeight -
-                                        (isLarge ? 9 : 5)
-                                )
-                            }
 
-                            if remaining > 0 {
-                                Text("+\(remaining) more")
-                                    .font(.system(
-                                        size: isLarge ? 12 : 10
-                                    ))
-                                    .foregroundStyle(Noir.muted)
+                                if hiddenCount > 0 &&
+                                    rowCapacity > visibleCount {
+                                    Text("+\(hiddenCount) more")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Noir.muted)
+                                        .frame(
+                                            height: rowHeight,
+                                            alignment: .leading
+                                        )
+                                }
                             }
                         }
                     }
-
-                    Spacer(minLength: 0)
+                    .padding(.horizontal, inset)
+                    .padding(.vertical, tiny ? 5 : inset)
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: .topLeading
+                    )
                 }
-                .padding(padding)
-
-                Spacer(minLength: 0)
             }
             .frame(
-                maxWidth: .infinity,
-                maxHeight: .infinity
+                width: width,
+                height: height,
+                alignment: .topLeading
             )
-            .background(task.color.opacity(0.28))
             .clipShape(
                 RoundedRectangle(cornerRadius: 7)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 7)
                     .stroke(
-                        task.color.opacity(0.25),
+                        task.color.opacity(0.3),
                         lineWidth: 1
                     )
             }
         }
     }
-
-    private func calculateVisibleCount(
-        total: Int,
-        capacity: Int
-    ) -> Int {
-        guard total > 0 else { return 0 }
-
-        if capacity >= total {
-            return total
-        }
-
-        // Reserve one row for "+N more" only
-        // when some subtasks cannot fit.
-        return max(0, capacity - 1)
-    }
 }
 
-
-// MARK: - EXPANDED CHECKLIST PANEL
+// MARK: - EXPANDED TASK PANEL
 
 struct ExpandedTaskPanel: View {
     let taskID: UUID
@@ -984,12 +1032,18 @@ struct ExpandedTaskPanel: View {
 
     private func panel(for task: CalendarTask) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(task.title)
                         .font(.system(
                             size: 22, weight: .semibold
                         ))
+                        .lineLimit(nil)
+                        .fixedSize(
+                            horizontal: false,
+                            vertical: true
+                        )
+                        .multilineTextAlignment(.leading)
 
                     Text(
                         task.start.label("HH:mm") +
@@ -998,16 +1052,17 @@ struct ExpandedTaskPanel: View {
                     )
                     .foregroundStyle(Noir.muted)
                 }
-
-                Spacer()
+                .frame(
+                    maxWidth: .infinity,
+                    alignment: .leading
+                )
 
                 Button(action: edit) {
                     Image(systemName: "pencil")
                         .font(.system(size: 17))
-                        .foregroundStyle(Noir.pale)
                 }
                 .buttonStyle(.plain)
-                .help("Edit main task")
+                .help("Edit task")
             }
 
             if !task.subtasks.isEmpty {
@@ -1035,8 +1090,18 @@ struct ExpandedTaskPanel: View {
                 }
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 15) {
+            if !task.notes.isEmpty {
+                Text(task.notes)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Noir.muted)
+                    .fixedSize(
+                        horizontal: false,
+                        vertical: true
+                    )
+            }
+
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 20) {
                     ForEach(task.subtasks) { subtask in
                         HStack(spacing: 10) {
                             Button {
@@ -1045,8 +1110,8 @@ struct ExpandedTaskPanel: View {
                                     subtaskID: subtask.id
                                 )
                             } label: {
-                                Image(systemName:
-                                    subtask.isDone
+                                Image(
+                                    systemName: subtask.isDone
                                     ? "checkmark.square"
                                     : "square"
                                 )
@@ -1064,6 +1129,10 @@ struct ExpandedTaskPanel: View {
                                 .foregroundStyle(
                                     subtask.isDone
                                     ? Noir.muted : Noir.pale
+                                )
+                                .fixedSize(
+                                    horizontal: false,
+                                    vertical: true
                                 )
 
                             Spacer()
@@ -1176,7 +1245,6 @@ struct MonthCalendar: View {
                             ForEach(0..<7, id: \.self) { col in
                                 MonthCell(
                                     day: dates[row * 7 + col],
-                                    month: date,
                                     tasks: store.tasks(
                                         on: dates[row * 7 + col]
                                     ),
@@ -1200,7 +1268,6 @@ struct MonthCalendar: View {
 
 struct MonthCell: View {
     let day: Date
-    let month: Date
     let tasks: [CalendarTask]
     let selectDay: (Date) -> Void
     let edit: (CalendarTask) -> Void
@@ -1243,10 +1310,20 @@ struct MonthCell: View {
                 .buttonStyle(.plain)
             }
 
+            if tasks.count > 3 {
+                Text("+\(tasks.count - 3) more")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Noir.muted)
+            }
+
             Spacer(minLength: 0)
         }
         .padding(8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
         .background(Noir.surface)
     }
 }
@@ -1280,17 +1357,23 @@ struct TaskEditor: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                editorHeader
-                nameField
-                dateFields
-                colorPicker
-                subtasksEditor
-                notesField
-                editorButtons
+        VStack(spacing: 0) {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 20) {
+                    editorHeader
+                    nameField
+                    dateFields
+                    colorPicker
+                    subtasksEditor
+                    notesField
+                }
+                .padding(25)
             }
-            .padding(25)
+
+            Divider()
+
+            editorButtons
+                .padding(20)
         }
         .frame(width: 530, height: 690)
         .background(Noir.surface)
@@ -1298,7 +1381,6 @@ struct TaskEditor: View {
         .preferredColorScheme(.dark)
         .onAppear(perform: loadTask)
     }
-
     private var editorHeader: some View {
         HStack {
             VStack(alignment: .leading, spacing: 5) {
@@ -1421,14 +1503,14 @@ struct TaskEditor: View {
             ForEach(subtasks) { subtask in
                 HStack(spacing: 10) {
                     Button {
-                        if let index = subtasks.firstIndex(where: {
+                        if let i = subtasks.firstIndex(where: {
                             $0.id == subtask.id
                         }) {
-                            subtasks[index].isDone.toggle()
+                            subtasks[i].isDone.toggle()
                         }
                     } label: {
-                        Image(systemName:
-                            subtask.isDone
+                        Image(
+                            systemName: subtask.isDone
                             ? "checkmark.square"
                             : "square"
                         )
@@ -1550,12 +1632,13 @@ struct TaskEditor: View {
     }
 
     private func addSubtask() {
-        let cleaned = newSubtask.trimmingCharacters(
+        let clean = newSubtask.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
-        guard !cleaned.isEmpty else { return }
 
-        subtasks.append(Subtask(title: cleaned))
+        guard !clean.isEmpty else { return }
+
+        subtasks.append(Subtask(title: clean))
         newSubtask = ""
     }
 
