@@ -6,11 +6,10 @@
 //
 
 
-
 import SwiftUI
 import Combine
 
-// MARK: - NOIR APP
+// MARK: - APP
 
 @main
 struct DaybookApp: App {
@@ -24,17 +23,7 @@ struct DaybookApp: App {
     }
 }
 
-// MARK: - THEME
-
-enum Noir {
-    static let background = Color(hex: "#101013")
-    static let surface = Color(hex: "#19191E")
-    static let field = Color(hex: "#242027")
-    static let grid = Color(hex: "#303036")
-    static let muted = Color(hex: "#A99BA0")
-    static let accent = Color(hex: "#B95760")
-    static let pale = Color(hex: "#F4E9EC")
-}
+// MARK: - COLORS
 
 extension Color {
     init(hex: String) {
@@ -51,6 +40,16 @@ extension Color {
             opacity: 1
         )
     }
+}
+
+enum Noir {
+    static let background = Color(hex: "#101013")
+    static let surface = Color(hex: "#19191E")
+    static let field = Color(hex: "#242027")
+    static let grid = Color(hex: "#303036")
+    static let muted = Color(hex: "#A99BA0")
+    static let accent = Color(hex: "#B95760")
+    static let pale = Color(hex: "#F4E9EC")
 }
 
 struct TaskShade: Identifiable {
@@ -119,17 +118,16 @@ struct CalendarTask: Identifiable, Codable {
     var notes = ""
     var subtasks: [Subtask] = []
 
-    var color: Color {
-        Color(hex: colorHex)
-    }
+    var color: Color { Color(hex: colorHex) }
 
     var completedCount: Int {
         subtasks.filter(\.isDone).count
     }
 
     var progress: Double {
-        guard !subtasks.isEmpty else { return 0 }
-        return Double(completedCount) / Double(subtasks.count)
+        subtasks.isEmpty
+        ? 0
+        : Double(completedCount) / Double(subtasks.count)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -171,31 +169,29 @@ struct CalendarTask: Identifiable, Codable {
     }
 }
 
-// MARK: - PERSISTENT STORAGE
+// MARK: - STORAGE
 
 final class TaskStore: ObservableObject {
     @Published var tasks: [CalendarTask] = [] {
         didSet { persist() }
     }
 
-    private let storageKey = "noir.calendar.tasks.v1"
+    private let key = "noir.calendar.tasks.v1"
 
     init() {
-        guard let data = UserDefaults.standard.data(
-            forKey: storageKey
-        ),
-        let saved = try? JSONDecoder().decode(
-            [CalendarTask].self, from: data
-        ) else { return }
-
-        tasks = saved
+        if let data = UserDefaults.standard.data(forKey: key),
+           let saved = try? JSONDecoder().decode(
+                [CalendarTask].self, from: data
+           ) {
+            tasks = saved
+        }
     }
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(tasks)
         else { return }
 
-        UserDefaults.standard.set(data, forKey: storageKey)
+        UserDefaults.standard.set(data, forKey: key)
     }
 
     func save(_ task: CalendarTask) {
@@ -212,7 +208,7 @@ final class TaskStore: ObservableObject {
         tasks.removeAll { $0.id == task.id }
     }
 
-    func toggleSubtask(taskID: UUID, subtaskID: UUID) {
+    func toggle(taskID: UUID, subtaskID: UUID) {
         guard let i = tasks.firstIndex(where: {
             $0.id == taskID
         }),
@@ -223,7 +219,7 @@ final class TaskStore: ObservableObject {
         tasks[i].subtasks[j].isDone.toggle()
     }
 
-    func addSubtask(to taskID: UUID, title: String) {
+    func addSubtask(taskID: UUID, title: String) {
         let clean = title.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
@@ -241,13 +237,17 @@ final class TaskStore: ObservableObject {
             $0.id == taskID
         }) else { return }
 
-        tasks[i].subtasks.removeAll { $0.id == subtaskID }
+        tasks[i].subtasks.removeAll {
+            $0.id == subtaskID
+        }
     }
 
     func tasks(on day: Date) -> [CalendarTask] {
         let cal = Calendar.current
         let start = cal.startOfDay(for: day)
-        let end = cal.date(byAdding: .day, value: 1, to: start)!
+        let end = cal.date(
+            byAdding: .day, value: 1, to: start
+        )!
 
         return tasks.filter {
             $0.start < end && $0.end > start
@@ -266,15 +266,16 @@ extension Date {
     }
 
     func label(_ format: String) -> String {
-        let f = DateFormatter()
-        f.dateFormat = format
-        return f.string(from: self)
+        let formatter = DateFormatter()
+        formatter.dateFormat = format
+        return formatter.string(from: self)
     }
 
     var monday: Date {
-        let cal = Calendar.current
-        let day = cal.startOfDay(for: self)
-        let weekday = cal.component(.weekday, from: day)
+        let day = Calendar.current.startOfDay(for: self)
+        let weekday = Calendar.current.component(
+            .weekday, from: day
+        )
         return day.addDays(-((weekday + 5) % 7))
     }
 
@@ -295,6 +296,13 @@ enum CalendarMode: String, CaseIterable {
     case month = "Month"
 }
 
+// MARK: - EDITOR REQUEST
+
+struct EditorRequest: Identifiable {
+    let id = UUID()
+    let task: CalendarTask?
+}
+
 // MARK: - MAIN VIEW
 
 struct DaybookView: View {
@@ -302,8 +310,7 @@ struct DaybookView: View {
 
     @State private var selectedDate = Date()
     @State private var mode: CalendarMode = .twoDays
-    @State private var editingTask: CalendarTask?
-    @State private var showingEditor = false
+    @State private var editorRequest: EditorRequest?
 
     private var visibleDays: [Date] {
         switch mode {
@@ -311,10 +318,12 @@ struct DaybookView: View {
             return [selectedDate]
         case .twoDays:
             return [selectedDate, selectedDate.addDays(1)]
-        case .week, .month:
+        case .week:
             return (0..<7).map {
                 selectedDate.monday.addDays($0)
             }
+        case .month:
+            return []
         }
     }
 
@@ -334,7 +343,7 @@ struct DaybookView: View {
                         selectedDate = day
                         mode = .day
                     },
-                    edit: openEditor
+                    selectTask: openEditor
                 )
             } else {
                 CalendarTimeline(
@@ -346,23 +355,22 @@ struct DaybookView: View {
         }
         .background(Noir.background)
         .foregroundStyle(.white)
-        .sheet(isPresented: $showingEditor) {
+        .sheet(item: $editorRequest) { request in
             TaskEditor(
-                task: editingTask,
+                task: request.task,
                 initialDate: selectedDate,
-                save: { task in
-                    store.save(task)
-                    showingEditor = false
+                save: { updated in
+                    store.save(updated)
+                    editorRequest = nil
                 },
                 delete: { task in
                     store.delete(task)
-                    showingEditor = false
+                    editorRequest = nil
                 },
                 cancel: {
-                    showingEditor = false
+                    editorRequest = nil
                 }
             )
-            .id(editingTask?.id.uuidString ?? "new")
         }
     }
 
@@ -374,7 +382,8 @@ struct DaybookView: View {
 
                 Text("noir.")
                     .font(.system(
-                        size: 23, weight: .semibold,
+                        size: 23,
+                        weight: .semibold,
                         design: .rounded
                     ))
 
@@ -412,8 +421,7 @@ struct DaybookView: View {
                 .frame(width: 290)
 
                 Button {
-                    editingTask = nil
-                    showingEditor = true
+                    editorRequest = EditorRequest(task: nil)
                 } label: {
                     Image(systemName: "plus")
                         .frame(width: 36, height: 36)
@@ -426,8 +434,8 @@ struct DaybookView: View {
             HStack {
                 Text(selectedDate.label("MMMM yyyy"))
                     .font(.system(
-                        size: 29, weight: .semibold,
-                        design: .rounded
+                        size: 29,
+                        weight: .semibold
                     ))
 
                 Spacer()
@@ -458,8 +466,7 @@ struct DaybookView: View {
     }
 
     private func openEditor(_ task: CalendarTask) {
-        editingTask = task
-        showingEditor = true
+        editorRequest = EditorRequest(task: task)
     }
 }
 
@@ -478,11 +485,30 @@ struct CalendarTimeline: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            dateHeaders
+            HStack(spacing: 0) {
+                Color.clear.frame(width: gutter)
 
-            Rectangle()
-                .fill(Noir.grid)
-                .frame(height: 1)
+                ForEach(days, id: \.self) { day in
+                    VStack(spacing: 5) {
+                        Text(day.label("EEE").uppercased())
+                            .font(.system(size: 10))
+                            .foregroundStyle(Noir.muted)
+
+                        Text(day.label("d"))
+                            .font(.system(
+                                size: 19, weight: .semibold
+                            ))
+                            .foregroundStyle(
+                                Calendar.current.isDateInToday(day)
+                                ? Noir.accent : .white
+                            )
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 62)
+
+            Divider()
 
             ScrollView(.vertical) {
                 GeometryReader { geometry in
@@ -503,8 +529,7 @@ struct CalendarTimeline: View {
                         )
 
                         HStack(alignment: .top, spacing: 0) {
-                            Color.clear
-                                .frame(width: gutter)
+                            Color.clear.frame(width: gutter)
 
                             ForEach(days, id: \.self) { day in
                                 DayColumn(
@@ -530,40 +555,10 @@ struct CalendarTimeline: View {
                 .frame(height: 24 * hourHeight)
             }
         }
-        .frame(maxHeight: .infinity)
-    }
-
-    private var dateHeaders: some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: gutter, height: 62)
-
-            ForEach(days, id: \.self) { day in
-                VStack(spacing: 5) {
-                    Text(day.label("EEE").uppercased())
-                        .font(.system(
-                            size: 10, weight: .semibold
-                        ))
-                        .tracking(1.2)
-                        .foregroundStyle(Noir.muted)
-
-                    Text(day.label("d"))
-                        .font(.system(
-                            size: 19, weight: .semibold
-                        ))
-                        .foregroundStyle(
-                            Calendar.current.isDateInToday(day)
-                            ? Noir.accent : .white
-                        )
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 62)
-            }
-        }
-        .frame(height: 62)
     }
 }
 
-// MARK: - HOUR GRID AND LIVE TIME
+// MARK: - HOUR GRID
 
 struct HourGrid: View {
     let width: CGFloat
@@ -574,10 +569,30 @@ struct HourGrid: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             ZStack(alignment: .topLeading) {
-                gridLines
+                ForEach(0...24, id: \.self) { hour in
+                    HStack(spacing: 0) {
+                        Text(hour < 24 ? hourText(hour) : "")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Noir.muted)
+                            .frame(
+                                width: gutter - 10,
+                                alignment: .trailing
+                            )
+
+                        Color.clear.frame(width: 10)
+
+                        Rectangle()
+                            .fill(Noir.grid)
+                            .frame(height: 1)
+                    }
+                    .frame(width: width)
+                    .offset(
+                        y: CGFloat(hour) * hourHeight
+                    )
+                }
 
                 if showNow {
-                    currentTimeMarker(context.date)
+                    nowMarker(context.date)
                 }
             }
             .frame(
@@ -589,52 +604,24 @@ struct HourGrid: View {
         .allowsHitTesting(false)
     }
 
-    private var gridLines: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(0...24, id: \.self) { hour in
-                HStack(spacing: 0) {
-                    Text(hour < 24 ? hourText(hour) : "")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Noir.muted)
-                        .frame(
-                            width: gutter - 10,
-                            alignment: .trailing
-                        )
-
-                    Color.clear.frame(width: 10)
-
-                    Rectangle()
-                        .fill(Noir.grid)
-                        .frame(height: 1)
-                }
-                .frame(width: width, height: 1)
-                .offset(y: CGFloat(hour) * hourHeight)
-            }
-        }
-    }
-
-    private func currentTimeMarker(_ now: Date) -> some View {
+    private func nowMarker(_ date: Date) -> some View {
         let cal = Calendar.current
-        let hour = cal.component(.hour, from: now)
-        let minute = cal.component(.minute, from: now)
-        let second = cal.component(.second, from: now)
+        let hour = cal.component(.hour, from: date)
+        let minute = cal.component(.minute, from: date)
 
         let y = (
             CGFloat(hour) +
-            CGFloat(minute) / 60 +
-            CGFloat(second) / 3600
+            CGFloat(minute) / 60
         ) * hourHeight
 
         return ZStack(alignment: .topLeading) {
             HStack(spacing: 4) {
-                Text(now.label("h:mm"))
-                    .font(.system(
-                        size: 10, weight: .semibold
-                    ))
+                Text(date.label("h:mm"))
+                    .font(.system(size: 10))
                     .monospacedDigit()
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 9))
             }
             .foregroundStyle(Noir.accent)
             .frame(
@@ -644,7 +631,7 @@ struct HourGrid: View {
             .offset(y: y - 7)
 
             Rectangle()
-                .fill(Noir.accent.opacity(0.9))
+                .fill(Noir.accent)
                 .frame(
                     width: max(0, width - gutter),
                     height: 1.5
@@ -674,7 +661,6 @@ struct DayColumn: View {
                 Rectangle()
                     .fill(Noir.grid)
                     .frame(width: 1)
-                    .allowsHitTesting(false)
 
                 ForEach(tasks) { task in
                     PositionedTask(
@@ -692,7 +678,7 @@ struct DayColumn: View {
     }
 }
 
-// MARK: - TASK POSITIONING
+// MARK: - POSITIONED TASK
 
 struct PositionedTask: View {
     let task: CalendarTask
@@ -704,17 +690,14 @@ struct PositionedTask: View {
     let edit: (CalendarTask) -> Void
 
     @State private var expanded = false
+    @State private var editAfterDismiss = false
 
     private var dayStart: Date {
         Calendar.current.startOfDay(for: day)
     }
 
     private var dayEnd: Date {
-        Calendar.current.date(
-            byAdding: .day,
-            value: 1,
-            to: dayStart
-        )!
+        dayStart.addDays(1)
     }
 
     private var top: CGFloat {
@@ -739,12 +722,7 @@ struct PositionedTask: View {
         allTasks.filter {
             $0.start < task.end && $0.end > task.start
         }
-        .sorted {
-            if $0.start == $1.start {
-                return $0.id.uuidString < $1.id.uuidString
-            }
-            return $0.start < $1.start
-        }
+        .sorted { $0.start < $1.start }
     }
 
     private var slotWidth: CGFloat {
@@ -767,26 +745,36 @@ struct PositionedTask: View {
         TaskCalendarCard(task: task)
             .frame(
                 width: max(1, slotWidth - 3),
-                height: blockHeight,
-                alignment: .topLeading
+                height: blockHeight
             )
-            .clipped()
             .contentShape(Rectangle())
             .onTapGesture {
                 expanded = true
             }
-            .popover(
-                isPresented: $expanded,
-                arrowEdge: .trailing
-            ) {
+            .popover(isPresented: $expanded) {
                 ExpandedTaskPanel(
                     taskID: task.id,
                     store: store,
                     edit: {
+                        editAfterDismiss = true
                         expanded = false
-                        edit(task)
                     }
                 )
+            }
+            .onChange(of: expanded) { _, value in
+                if !value && editAfterDismiss {
+                    editAfterDismiss = false
+                    DispatchQueue.main.asyncAfter(
+                        deadline: .now() + 0.25
+                    ) {
+                        edit(task)
+                    }
+                }
+            }
+            .contextMenu {
+                Button("Edit Task") {
+                    edit(task)
+                }
             }
             .offset(
                 x: horizontalOffset,
@@ -795,7 +783,7 @@ struct PositionedTask: View {
     }
 }
 
-// MARK: - FIXED TASK CARD
+// MARK: - TASK CARD
 
 struct TaskCalendarCard: View {
     let task: CalendarTask
@@ -804,206 +792,151 @@ struct TaskCalendarCard: View {
         GeometryReader { geometry in
             let width = geometry.size.width
             let height = geometry.size.height
-
             let large = width >= 390
             let medium = width >= 230
             let tiny = height < 55
 
-            let inset: CGFloat = large ? 18 : (medium ? 13 : 8)
-            let titleSize: CGFloat = large ? 19 : (medium ? 15 : 12)
-            let timeSize: CGFloat = large ? 14 : (medium ? 12 : 10)
-            let rowSize: CGFloat = large ? 15 : (medium ? 12 : 10)
-            let rowHeight: CGFloat = large ? 32 : (medium ? 27 : 23)
+            let titleSize: CGFloat =
+                large ? 19 : (medium ? 15 : 12)
 
-            let titleLines = height >= 110 ? 3 : (height >= 65 ? 2 : 1)
+            let rowHeight: CGFloat =
+                large ? 32 : (medium ? 27 : 23)
 
-            let headerHeight: CGFloat =
+            let padding: CGFloat =
+                large ? 16 : (medium ? 12 : 8)
+
+            let titleLines = height >= 110 ? 3 : (
+                height >= 65 ? 2 : 1
+            )
+
+            let headerSpace: CGFloat =
                 CGFloat(titleLines) * (titleSize + 4) +
-                (tiny ? 0 : timeSize + 13) +
-                inset * 2 + 14
+                (tiny ? 0 : 32) +
+                padding * 2 + 25
 
-            let hasProgress =
-                !task.subtasks.isEmpty &&
-                height >= headerHeight + 18
+            let available = max(0, height - headerSpace)
 
-            let remainingHeight = max(
-                0,
-                height - headerHeight -
-                (hasProgress ? 20 : 0)
-            )
-
-            let rowCapacity = Int(
-                remainingHeight / rowHeight
-            )
-
+            let capacity = Int(available / rowHeight)
             let total = task.subtasks.count
 
-            let visibleCount: Int = {
-                if rowCapacity >= total {
-                    return total
-                }
-                return max(0, rowCapacity - 1)
-            }()
+            let visible = capacity >= total
+                ? total
+                : max(0, capacity - 1)
 
-            let hiddenCount = total - visibleCount
+            let hidden = total - visible
 
-            ZStack(alignment: .topLeading) {
-                task.color.opacity(0.25)
+            HStack(alignment: .top, spacing: 0) {
+                Rectangle()
+                    .fill(task.color)
+                    .frame(width: large ? 6 : 4)
 
-                HStack(spacing: 0) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(task.color)
-                        .frame(width: large ? 6 : 4)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(task.title)
+                        .font(.system(
+                            size: titleSize,
+                            weight: .semibold
+                        ))
+                        .lineLimit(titleLines)
+                        .multilineTextAlignment(.leading)
+                        .frame(
+                            maxWidth: .infinity,
+                            alignment: .leading
+                        )
 
-                    VStack(
-                        alignment: .leading,
-                        spacing: 0
-                    ) {
-                        Text(task.title)
+                    if !tiny {
+                        Text(
+                            task.start.label("HH:mm") +
+                            " – " +
+                            task.end.label("HH:mm")
+                        )
+                        .font(.system(
+                            size: large ? 14 : 11
+                        ))
+                        .foregroundStyle(Noir.pale.opacity(0.8))
+                        .padding(.top, 6)
+                    }
+
+                    if !task.subtasks.isEmpty &&
+                        height > headerSpace {
+
+                        GeometryReader { bar in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(task.color.opacity(0.2))
+
+                                Capsule()
+                                    .fill(task.color)
+                                    .frame(
+                                        width: bar.size.width *
+                                            task.progress
+                                    )
+                            }
+                        }
+                        .frame(height: 5)
+                        .padding(.top, 12)
+                        .padding(.bottom, 8)
+
+                        ForEach(
+                            Array(task.subtasks.prefix(visible))
+                        ) { subtask in
+                            HStack(spacing: 8) {
+                                Image(
+                                    systemName: subtask.isDone
+                                    ? "checkmark.square"
+                                    : "square"
+                                )
+
+                                Text(subtask.title)
+                                    .lineLimit(1)
+                                    .strikethrough(subtask.isDone)
+
+                                Spacer(minLength: 0)
+                            }
                             .font(.system(
-                                size: titleSize,
-                                weight: .semibold
+                                size: large ? 15 : 11
                             ))
-                            .foregroundStyle(.white)
-                            .lineLimit(titleLines)
-                            .multilineTextAlignment(.leading)
-                            .frame(
-                                maxWidth: .infinity,
-                                alignment: .leading
-                            )
-
-                        if !tiny {
-                            Text(
-                                task.start.label("HH:mm") +
-                                " – " +
-                                task.end.label("HH:mm")
-                            )
-                            .font(.system(size: timeSize))
                             .foregroundStyle(
-                                Noir.pale.opacity(0.8)
+                                subtask.isDone
+                                ? Noir.muted : Noir.pale
                             )
-                            .padding(.top, 6)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                            .frame(height: rowHeight)
                         }
 
-                        if hasProgress {
-                            HStack(spacing: 8) {
-                                GeometryReader { bar in
-                                    ZStack(alignment: .leading) {
-                                        Capsule()
-                                            .fill(
-                                                task.color.opacity(0.2)
-                                            )
-
-                                        Capsule()
-                                            .fill(task.color)
-                                            .frame(
-                                                width: bar.size.width *
-                                                    task.progress
-                                            )
-                                    }
-                                }
-                                .frame(height: 5)
-
-                                Text(
-                                    "\(task.completedCount)/\(total)"
-                                )
+                        if hidden > 0 && capacity > visible {
+                            Text("+\(hidden) more")
                                 .font(.system(size: 10))
                                 .foregroundStyle(Noir.muted)
-                            }
-                            .frame(height: 12)
-                            .padding(.top, 12)
-                            .padding(.bottom, 8)
-
-                            VStack(
-                                alignment: .leading,
-                                spacing: 0
-                            ) {
-                                ForEach(
-                                    Array(
-                                        task.subtasks.prefix(visibleCount)
-                                    )
-                                ) { subtask in
-                                    HStack(spacing: 8) {
-                                        Image(
-                                            systemName: subtask.isDone
-                                            ? "checkmark.square"
-                                            : "square"
-                                        )
-                                        .font(.system(
-                                            size: rowSize + 1
-                                        ))
-                                        .foregroundStyle(
-                                            subtask.isDone
-                                            ? task.color : Noir.pale
-                                        )
-
-                                        Text(subtask.title)
-                                            .font(.system(
-                                                size: rowSize
-                                            ))
-                                            .lineLimit(1)
-                                            .strikethrough(
-                                                subtask.isDone
-                                            )
-                                            .foregroundStyle(
-                                                subtask.isDone
-                                                ? Noir.muted
-                                                : Noir.pale
-                                            )
-
-                                        Spacer(minLength: 0)
-                                    }
-                                    .frame(
-                                        height: rowHeight,
-                                        alignment: .leading
-                                    )
-                                    Spacer(minLength: 0)
-                                }
-
-                                if hiddenCount > 0 &&
-                                    rowCapacity > visibleCount {
-                                    Text("+\(hiddenCount) more")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(Noir.muted)
-                                        .frame(
-                                            height: rowHeight,
-                                            alignment: .leading
-                                        )
-                                }
-                            }
+                                .frame(height: rowHeight)
                         }
                     }
-                    .padding(.horizontal, inset)
-                    .padding(.vertical, tiny ? 5 : inset)
-                    .frame(
-                        maxWidth: .infinity,
-                        maxHeight: .infinity,
-                        alignment: .topLeading
-                    )
+
+                    Spacer(minLength: 0)
                 }
+                .padding(padding)
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
             }
             .frame(
                 width: width,
                 height: height,
                 alignment: .topLeading
             )
+            .background(task.color.opacity(0.25))
             .clipShape(
                 RoundedRectangle(cornerRadius: 7)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 7)
-                    .stroke(
-                        task.color.opacity(0.3),
-                        lineWidth: 1
-                    )
+                    .stroke(task.color.opacity(0.3))
             }
         }
     }
 }
 
-// MARK: - EXPANDED TASK PANEL
+// MARK: - EXPANDED TASK
 
 struct ExpandedTaskPanel: View {
     let taskID: UUID
@@ -1017,179 +950,121 @@ struct ExpandedTaskPanel: View {
     }
 
     var body: some View {
-        Group {
-            if let task {
-                panel(for: task)
-            } else {
-                Text("Task no longer exists")
-                    .padding()
-            }
-        }
-        .frame(width: 390)
-        .background(Noir.background)
-        .foregroundStyle(Noir.pale)
-    }
-
-    private func panel(for task: CalendarTask) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(task.title)
-                        .font(.system(
-                            size: 22, weight: .semibold
-                        ))
-                        .lineLimit(nil)
-                        .fixedSize(
-                            horizontal: false,
-                            vertical: true
+            if let task {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(task.title)
+                            .font(.system(
+                                size: 22,
+                                weight: .semibold
+                            ))
+                            .fixedSize(
+                                horizontal: false,
+                                vertical: true
+                            )
+
+                        Text(
+                            task.start.label("HH:mm") +
+                            " – " +
+                            task.end.label("HH:mm")
                         )
-                        .multilineTextAlignment(.leading)
-
-                    Text(
-                        task.start.label("HH:mm") +
-                        " – " +
-                        task.end.label("HH:mm")
-                    )
-                    .foregroundStyle(Noir.muted)
-                }
-                .frame(
-                    maxWidth: .infinity,
-                    alignment: .leading
-                )
-
-                Button(action: edit) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 17))
-                }
-                .buttonStyle(.plain)
-                .help("Edit task")
-            }
-
-            if !task.subtasks.isEmpty {
-                HStack(spacing: 10) {
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(task.color.opacity(0.2))
-
-                            Capsule()
-                                .fill(task.color)
-                                .frame(
-                                    width: geometry.size.width *
-                                        task.progress
-                                )
-                        }
+                        .foregroundStyle(Noir.muted)
                     }
-                    .frame(height: 6)
+
+                    Spacer()
+
+                    Button(action: edit) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 17))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Edit task")
+                }
+
+                if !task.subtasks.isEmpty {
+                    ProgressView(value: task.progress)
+                        .tint(task.color)
 
                     Text(
-                        "\(task.completedCount)/\(task.subtasks.count)"
+                        "\(task.completedCount) of \(task.subtasks.count) completed"
                     )
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundStyle(Noir.muted)
                 }
-            }
 
-            if !task.notes.isEmpty {
-                Text(task.notes)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Noir.muted)
-                    .fixedSize(
-                        horizontal: false,
-                        vertical: true
-                    )
-            }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(task.subtasks) { subtask in
+                            HStack(spacing: 10) {
+                                Button {
+                                    store.toggle(
+                                        taskID: taskID,
+                                        subtaskID: subtask.id
+                                    )
+                                } label: {
+                                    Image(
+                                        systemName: subtask.isDone
+                                        ? "checkmark.square"
+                                        : "square"
+                                    )
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(task.color)
+                                }
+                                .buttonStyle(.plain)
 
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 20) {
-                    ForEach(task.subtasks) { subtask in
-                        HStack(spacing: 10) {
-                            Button {
-                                store.toggleSubtask(
-                                    taskID: taskID,
-                                    subtaskID: subtask.id
-                                )
-                            } label: {
-                                Image(
-                                    systemName: subtask.isDone
-                                    ? "checkmark.square"
-                                    : "square"
-                                )
-                                .font(.system(size: 18))
-                                .foregroundStyle(
-                                    subtask.isDone
-                                    ? task.color : Noir.pale
-                                )
+                                Text(subtask.title)
+                                    .strikethrough(subtask.isDone)
+                                    .foregroundStyle(
+                                        subtask.isDone
+                                        ? Noir.muted : Noir.pale
+                                    )
+
+                                Spacer()
+
+                                Button {
+                                    store.deleteSubtask(
+                                        taskID: taskID,
+                                        subtaskID: subtask.id
+                                    )
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .foregroundStyle(Noir.muted)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
-
-                            Text(subtask.title)
-                                .font(.system(size: 13))
-                                .strikethrough(subtask.isDone)
-                                .foregroundStyle(
-                                    subtask.isDone
-                                    ? Noir.muted : Noir.pale
-                                )
-                                .fixedSize(
-                                    horizontal: false,
-                                    vertical: true
-                                )
-
-                            Spacer()
-
-                            Button {
-                                store.deleteSubtask(
-                                    taskID: taskID,
-                                    subtaskID: subtask.id
-                                )
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(Noir.muted)
-                            }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
-                .padding(.vertical, 4)
-            }
-            .frame(maxHeight: 280)
+                .frame(maxHeight: 270)
 
-            HStack(spacing: 9) {
-                TextField(
-                    "Add a subtask...",
-                    text: $newSubtask
-                )
-                .textFieldStyle(.plain)
-                .padding(11)
-                .background(Noir.field)
-                .cornerRadius(8)
-                .onSubmit(addSubtask)
+                HStack {
+                    TextField(
+                        "Add a subtask...",
+                        text: $newSubtask
+                    )
+                    .textFieldStyle(.plain)
+                    .padding(10)
+                    .background(Noir.field)
+                    .cornerRadius(8)
+                    .onSubmit(addSubtask)
 
-                Button(action: addSubtask) {
-                    Image(systemName: "plus")
-                        .frame(width: 34, height: 34)
-                        .background(Noir.field)
-                        .cornerRadius(8)
+                    Button(action: addSubtask) {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
-        .padding(23)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(hex: "#29191F"))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Noir.accent.opacity(0.5))
-        }
-        .padding(8)
+        .padding(24)
+        .frame(width: 390)
+        .background(Color(hex: "#29191F"))
+        .foregroundStyle(Noir.pale)
     }
 
     private func addSubtask() {
         store.addSubtask(
-            to: taskID,
+            taskID: taskID,
             title: newSubtask
         )
         newSubtask = ""
@@ -1202,7 +1077,7 @@ struct MonthCalendar: View {
     let date: Date
     @ObservedObject var store: TaskStore
     let selectDay: (Date) -> Void
-    let edit: (CalendarTask) -> Void
+    let selectTask: (CalendarTask) -> Void
 
     private var dates: [Date] {
         let first = date.monthStart
@@ -1219,42 +1094,40 @@ struct MonthCalendar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
+            HStack {
                 ForEach(
                     ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
                     id: \.self
                 ) { name in
                     Text(name)
-                        .font(.system(
-                            size: 10, weight: .semibold
-                        ))
+                        .font(.system(size: 10))
                         .foregroundStyle(Noir.muted)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
                 }
             }
+            .padding(.vertical, 12)
 
             GeometryReader { geometry in
-                let height = max(
-                    1, (geometry.size.height - 5) / 6
+                let cellHeight = max(
+                    1, geometry.size.height / 6
                 )
 
                 VStack(spacing: 1) {
                     ForEach(0..<6, id: \.self) { row in
                         HStack(spacing: 1) {
                             ForEach(0..<7, id: \.self) { col in
+                                let day = dates[row * 7 + col]
+
                                 MonthCell(
-                                    day: dates[row * 7 + col],
-                                    tasks: store.tasks(
-                                        on: dates[row * 7 + col]
-                                    ),
+                                    day: day,
+                                    tasks: store.tasks(on: day),
                                     selectDay: selectDay,
-                                    edit: edit
+                                    selectTask: selectTask
                                 )
                                 .frame(
                                     maxWidth: .infinity,
-                                    minHeight: height,
-                                    maxHeight: height
+                                    minHeight: cellHeight,
+                                    maxHeight: cellHeight
                                 )
                             }
                         }
@@ -1270,7 +1143,7 @@ struct MonthCell: View {
     let day: Date
     let tasks: [CalendarTask]
     let selectDay: (Date) -> Void
-    let edit: (CalendarTask) -> Void
+    let selectTask: (CalendarTask) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -1290,7 +1163,7 @@ struct MonthCell: View {
 
             ForEach(tasks.prefix(3)) { task in
                 Button {
-                    edit(task)
+                    selectTask(task)
                 } label: {
                     HStack(spacing: 5) {
                         Circle()
@@ -1310,12 +1183,6 @@ struct MonthCell: View {
                 .buttonStyle(.plain)
             }
 
-            if tasks.count > 3 {
-                Text("+\(tasks.count - 3) more")
-                    .font(.system(size: 9))
-                    .foregroundStyle(Noir.muted)
-            }
-
             Spacer(minLength: 0)
         }
         .padding(8)
@@ -1328,7 +1195,7 @@ struct MonthCell: View {
     }
 }
 
-// MARK: - TASK EDITOR
+// MARK: - TASK EDITOR WITH DELETE
 
 struct TaskEditor: View {
     let task: CalendarTask?
@@ -1344,6 +1211,7 @@ struct TaskEditor: View {
     @State private var notes = ""
     @State private var subtasks: [Subtask] = []
     @State private var newSubtask = ""
+    @State private var confirmDelete = false
 
     private let columns = Array(
         repeating: GridItem(.flexible(), spacing: 10),
@@ -1360,7 +1228,7 @@ struct TaskEditor: View {
         VStack(spacing: 0) {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 20) {
-                    editorHeader
+                    header
                     nameField
                     dateFields
                     colorPicker
@@ -1372,16 +1240,34 @@ struct TaskEditor: View {
 
             Divider()
 
-            editorButtons
+            footer
                 .padding(20)
         }
         .frame(width: 530, height: 690)
         .background(Noir.surface)
-        .foregroundStyle(.white)
+        .foregroundStyle(Noir.pale)
         .preferredColorScheme(.dark)
         .onAppear(perform: loadTask)
+        .confirmationDialog(
+            "Delete this task?",
+            isPresented: $confirmDelete,
+            titleVisibility: .visible
+        ) {
+            if let task {
+                Button("Delete Task", role: .destructive) {
+                    delete(task)
+                }
+            }
+
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "This will permanently delete the task and all its subtasks."
+            )
+        }
     }
-    private var editorHeader: some View {
+
+    private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 5) {
                 Text(task == nil ? "New Task" : "Edit Task")
@@ -1503,10 +1389,10 @@ struct TaskEditor: View {
             ForEach(subtasks) { subtask in
                 HStack(spacing: 10) {
                     Button {
-                        if let i = subtasks.firstIndex(where: {
+                        if let index = subtasks.firstIndex(where: {
                             $0.id == subtask.id
                         }) {
-                            subtasks[i].isDone.toggle()
+                            subtasks[index].isDone.toggle()
                         }
                     } label: {
                         Image(
@@ -1567,13 +1453,16 @@ struct TaskEditor: View {
         }
     }
 
-    private var editorButtons: some View {
+    private var footer: some View {
         HStack(spacing: 16) {
-            if let task {
-                Button {
-                    delete(task)
+            if task != nil {
+                Button(role: .destructive) {
+                    confirmDelete = true
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Label(
+                        "Delete Task",
+                        systemImage: "trash"
+                    )
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Noir.accent)
@@ -1587,7 +1476,8 @@ struct TaskEditor: View {
             Button(action: saveTask) {
                 Text("Save Task")
                     .font(.system(
-                        size: 13, weight: .semibold
+                        size: 13,
+                        weight: .semibold
                     ))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 11)
@@ -1601,8 +1491,8 @@ struct TaskEditor: View {
         }
     }
 
-    private func sectionLabel(_ value: String) -> some View {
-        Text(value)
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
             .font(.system(
                 size: 10, weight: .semibold
             ))
@@ -1624,7 +1514,9 @@ struct TaskEditor: View {
             )
 
             start = Calendar.current.date(
-                byAdding: .hour, value: 9, to: day
+                byAdding: .hour,
+                value: 9,
+                to: day
             ) ?? initialDate
 
             end = start.addingTimeInterval(3600)
