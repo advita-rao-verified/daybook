@@ -15,20 +15,28 @@ struct CalendarTimeline: View {
 
     private let gutter: CGFloat = 72
 
-    private var hourHeight: CGFloat {
-        days.count <= 2 ? 95 : 85
+    private var layout: AdaptiveTimelineLayout {
+        AdaptiveTimelineLayout(
+            days: days,
+            tasksByDay: days.map {
+                store.tasks(on: $0)
+            }
+        )
     }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                Color.clear.frame(width: gutter)
+                Color.clear
+                    .frame(width: gutter)
 
                 ForEach(days, id: \.self) { day in
                     VStack(spacing: 4) {
-                        Text(day.formatted("EEE").uppercased())
-                            .font(.system(size: 10))
-                            .foregroundStyle(Noir.muted)
+                        Text(
+                            day.formatted("EEE").uppercased()
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(Noir.muted)
 
                         Text(day.formatted("d"))
                             .font(.system(
@@ -37,7 +45,8 @@ struct CalendarTimeline: View {
                             ))
                             .foregroundStyle(
                                 Calendar.current.isDateInToday(day)
-                                ? Noir.accent : Noir.pale
+                                ? Noir.accent
+                                : Noir.pale
                             )
                     }
                     .frame(maxWidth: .infinity)
@@ -49,23 +58,28 @@ struct CalendarTimeline: View {
 
             ScrollView(.vertical) {
                 GeometryReader { geometry in
+                    let sharedLayout = layout
+
                     let columnWidth = max(
                         1,
-                        (geometry.size.width - gutter) /
-                        CGFloat(max(1, days.count))
+                        (geometry.size.width - gutter)
+                        / CGFloat(max(1, days.count))
                     )
 
                     ZStack(alignment: .topLeading) {
                         HourGrid(
                             width: geometry.size.width,
                             gutter: gutter,
-                            hourHeight: hourHeight,
+                            layout: sharedLayout,
                             showNow: days.contains {
                                 Calendar.current.isDateInToday($0)
                             }
                         )
 
-                        HStack(alignment: .top, spacing: 0) {
+                        HStack(
+                            alignment: .top,
+                            spacing: 0
+                        ) {
                             Color.clear
                                 .frame(width: gutter)
 
@@ -74,29 +88,24 @@ struct CalendarTimeline: View {
                                     day: day,
                                     tasks: store.tasks(on: day),
                                     store: store,
-                                    hourHeight: hourHeight,
+                                    layout: sharedLayout,
                                     edit: edit
                                 )
                                 .frame(
                                     width: columnWidth,
-                                    height: 24 * hourHeight,
+                                    height: sharedLayout.totalHeight,
                                     alignment: .topLeading
                                 )
                             }
                         }
-                        .frame(
-                            width: geometry.size.width,
-                            height: 24 * hourHeight,
-                            alignment: .topLeading
-                        )
                     }
                     .frame(
                         width: geometry.size.width,
-                        height: 24 * hourHeight,
+                        height: sharedLayout.totalHeight,
                         alignment: .topLeading
                     )
                 }
-                .frame(height: 24 * hourHeight)
+                .frame(height: layout.totalHeight)
             }
         }
     }

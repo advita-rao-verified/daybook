@@ -11,27 +11,22 @@ import SwiftUI
 struct HourGrid: View {
     let width: CGFloat
     let gutter: CGFloat
-    let hourHeight: CGFloat
+    let layout: AdaptiveTimelineLayout
     let showNow: Bool
 
-    private var totalHeight: CGFloat {
-        24 * hourHeight
-    }
-
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 15)) { context in
+        TimelineView(
+            .periodic(from: .now, by: 15)
+        ) { context in
             ZStack(alignment: .topLeading) {
-
-                // MARK: - Hour Lines
-
                 ForEach(0..<24, id: \.self) { hour in
                     hourRow(hour)
                         .offset(
-                            y: CGFloat(hour) * hourHeight
+                            y: layout.y(
+                                forMinute: CGFloat(hour * 60)
+                            )
                         )
                 }
-
-                // MARK: - Current Time Indicator
 
                 if showNow {
                     currentTimeLine(context.date)
@@ -39,14 +34,12 @@ struct HourGrid: View {
             }
             .frame(
                 width: width,
-                height: totalHeight,
+                height: layout.totalHeight,
                 alignment: .topLeading
             )
         }
         .allowsHitTesting(false)
     }
-
-    // MARK: - Hour Row
 
     private func hourRow(_ hour: Int) -> some View {
         HStack(spacing: 0) {
@@ -72,30 +65,41 @@ struct HourGrid: View {
         )
     }
 
-    // MARK: - Hour Label
-
     private func hourLabel(_ hour: Int) -> String {
-        let display = hour % 12 == 0 ? 12 : hour % 12
+        let display = hour % 12 == 0
+            ? 12
+            : hour % 12
 
         return "\(display) \(hour < 12 ? "AM" : "PM")"
     }
 
-    // MARK: - Current Time Indicator
-
-    private func currentTimeLine(_ now: Date) -> some View {
+    private func currentTimeLine(
+        _ now: Date
+    ) -> some View {
         let calendar = Calendar.current
 
-        let hour = calendar.component(.hour, from: now)
-        let minute = calendar.component(.minute, from: now)
-        let second = calendar.component(.second, from: now)
+        let hour = calendar.component(
+            .hour,
+            from: now
+        )
 
-        // Exact position including seconds.
-        let hoursSinceMidnight =
-            CGFloat(hour)
-            + CGFloat(minute) / 60
-            + CGFloat(second) / 3600
+        let minute = calendar.component(
+            .minute,
+            from: now
+        )
 
-        let yPosition = hoursSinceMidnight * hourHeight
+        let second = calendar.component(
+            .second,
+            from: now
+        )
+
+        let minuteOfDay =
+            CGFloat(hour * 60 + minute)
+            + CGFloat(second) / 60
+
+        let yPosition = layout.y(
+            forMinute: minuteOfDay
+        )
 
         return HStack(spacing: 0) {
             Text(now.formatted("h:mm"))
@@ -124,3 +128,4 @@ struct HourGrid: View {
         .offset(y: yPosition - 6)
     }
 }
+

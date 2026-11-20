@@ -13,8 +13,10 @@ struct PositionedTask: View {
     let day: Date
     let allTasks: [CalendarTask]
     let width: CGFloat
-    let hourHeight: CGFloat
+    let layout: AdaptiveTimelineLayout
+
     @ObservedObject var store: TaskStore
+
     let edit: (CalendarTask) -> Void
 
     @State private var expanded = false
@@ -25,40 +27,48 @@ struct PositionedTask: View {
     }
 
     private var dayEnd: Date {
-        dayStart.addingDays(1)
+        Calendar.current.date(
+            byAdding: .day,
+            value: 1,
+            to: dayStart
+        ) ?? dayStart.addingTimeInterval(86400)
     }
 
     private var startY: CGFloat {
         let visibleStart = max(task.start, dayStart)
 
-        return CGFloat(
-            visibleStart.timeIntervalSince(dayStart) / 3600
-        ) * hourHeight
+        return layout.y(
+            for: visibleStart,
+            on: day
+        )
     }
 
     private var taskHeight: CGFloat {
         let visibleStart = max(task.start, dayStart)
         let visibleEnd = min(task.end, dayEnd)
 
-        return max(
-            2,
-            CGFloat(
-                max(
-                    0,
-                    visibleEnd.timeIntervalSince(visibleStart)
-                ) / 3600
-            ) * hourHeight - 4
+        let endY = layout.y(
+            for: visibleEnd,
+            on: day
         )
+
+        let beginningY = layout.y(
+            for: visibleStart,
+            on: day
+        )
+
+        return max(2, endY - beginningY - 4)
     }
 
     private var overlaps: [CalendarTask] {
         allTasks.filter {
-            $0.start < task.end &&
-            $0.end > task.start
+            $0.start < task.end
+            && $0.end > task.start
         }
         .sorted {
             if $0.start == $1.start {
-                return $0.id.uuidString < $1.id.uuidString
+                return $0.id.uuidString
+                    < $1.id.uuidString
             }
 
             return $0.start < $1.start
@@ -68,8 +78,8 @@ struct PositionedTask: View {
     private var slotWidth: CGFloat {
         max(
             1,
-            (width - 8) /
-            CGFloat(max(1, overlaps.count))
+            (width - 8)
+            / CGFloat(max(1, overlaps.count))
         )
     }
 
@@ -88,9 +98,9 @@ struct PositionedTask: View {
     }
 
     private func openSeriesEditor() {
-        guard let original = store.tasks.first(where: {
-            $0.id == task.id
-        }) else {
+        guard let original = store.tasks.first(
+            where: { $0.id == task.id }
+        ) else {
             return
         }
 

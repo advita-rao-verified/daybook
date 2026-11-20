@@ -6,13 +6,16 @@
 //
 
 
+
 import SwiftUI
 
 struct DayColumn: View {
     let day: Date
     let tasks: [CalendarTask]
+
     @ObservedObject var store: TaskStore
-    let hourHeight: CGFloat
+
+    let layout: AdaptiveTimelineLayout
     let edit: (CalendarTask) -> Void
 
     var body: some View {
@@ -20,10 +23,9 @@ struct DayColumn: View {
             ZStack(alignment: .topLeading) {
                 Rectangle()
                     .fill(Noir.grid)
-                    .frame(width: 1)
                     .frame(
-                        height: 24 * hourHeight,
-                        alignment: .top
+                        width: 1,
+                        height: layout.totalHeight
                     )
 
                 ForEach(tasks) { task in
@@ -32,7 +34,7 @@ struct DayColumn: View {
                         day: day,
                         allTasks: tasks,
                         width: geometry.size.width,
-                        hourHeight: hourHeight,
+                        layout: layout,
                         store: store,
                         edit: edit
                     )
@@ -40,7 +42,7 @@ struct DayColumn: View {
             }
             .frame(
                 width: geometry.size.width,
-                height: 24 * hourHeight,
+                height: layout.totalHeight,
                 alignment: .topLeading
             )
         }

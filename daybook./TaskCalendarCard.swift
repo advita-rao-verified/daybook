@@ -9,12 +9,14 @@
 import SwiftUI
 
 struct TaskCalendarCard: View {
+
     let task: CalendarTask
     @ObservedObject var store: TaskStore
     let openDetails: () -> Void
 
     private var currentTask: CalendarTask {
-        if task.repeatsWeekly, let date = task.occurrenceDate {
+        if task.repeatsWeekly,
+           let date = task.occurrenceDate {
             return store.tasks(on: date).first {
                 $0.id == task.id
             } ?? task
@@ -27,16 +29,22 @@ struct TaskCalendarCard: View {
 
     var body: some View {
         GeometryReader { geometry in
+
             let compact = geometry.size.width < 180
-            let short = geometry.size.height < 65
+            let height = geometry.size.height
             let current = currentTask
 
+            let veryShort = height < 45
+            let showSubtasks = height > 130
+
             HStack(alignment: .top, spacing: 0) {
+
                 Rectangle()
                     .fill(current.color)
                     .frame(width: 5)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
+
                     Button(action: openDetails) {
                         Text(current.title)
                             .font(.system(
@@ -44,7 +52,7 @@ struct TaskCalendarCard: View {
                                 weight: .semibold
                             ))
                             .lineLimit(
-                                geometry.size.height > 110 ? 3 : 1
+                                height > 110 ? 3 : 1
                             )
                             .frame(
                                 maxWidth: .infinity,
@@ -54,48 +62,65 @@ struct TaskCalendarCard: View {
                     }
                     .buttonStyle(.plain)
 
-                    if !short {
-                        Text(
-                            "\(current.start.formatted("HH:mm")) – " +
-                            current.end.formatted("HH:mm")
+                    // Always prioritize the task's time.
+                    Text(
+                        "\(current.start.formatted("HH:mm")) – " +
+                        current.end.formatted("HH:mm")
+                    )
+                    .font(.system(
+                        size: compact ? 10 : 12
+                    ))
+                    .foregroundStyle(
+                        Noir.pale.opacity(0.75)
+                    )
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                    if !current.subtasks.isEmpty
+                        && showSubtasks {
+
+                        ProgressView(
+                            value: current.progress
                         )
-                        .font(.system(size: compact ? 10 : 12))
-                        .foregroundStyle(Noir.pale.opacity(0.75))
-                    }
-
-                    if !current.subtasks.isEmpty &&
-                        geometry.size.height > 130 {
-
-                        ProgressView(value: current.progress)
-                            .tint(current.color)
-                            .padding(.top, 5)
+                        .tint(current.color)
+                        .padding(.top, 5)
 
                         ForEach(
-                            Array(current.subtasks.prefix(
-                                geometry.size.height > 280 ? 8 : 2
-                            ))
+                            Array(
+                                current.subtasks.prefix(
+                                    height > 280 ? 8 : 2
+                                )
+                            )
                         ) { subtask in
+
                             Button {
                                 store.toggle(
                                     taskID: current.id,
                                     subtaskID: subtask.id,
-                                    occurrenceDate: current.occurrenceDate
+                                    occurrenceDate:
+                                        current.occurrenceDate
                                 )
                             } label: {
+
                                 HStack(spacing: 6) {
+
                                     Image(
-                                        systemName: subtask.isDone
-                                        ? "checkmark.square.fill"
-                                        : "square"
+                                        systemName:
+                                            subtask.isDone
+                                            ? "checkmark.square.fill"
+                                            : "square"
                                     )
                                     .foregroundStyle(
                                         subtask.isDone
-                                        ? current.color : Noir.pale
+                                        ? current.color
+                                        : Noir.pale
                                     )
 
                                     Text(subtask.title)
                                         .lineLimit(1)
-                                        .strikethrough(subtask.isDone)
+                                        .strikethrough(
+                                            subtask.isDone
+                                        )
                                         .frame(
                                             maxWidth: .infinity,
                                             alignment: .leading
@@ -106,7 +131,8 @@ struct TaskCalendarCard: View {
                                 ))
                                 .foregroundStyle(
                                     subtask.isDone
-                                    ? Noir.muted : Noir.pale
+                                    ? Noir.muted
+                                    : Noir.pale
                                 )
                                 .contentShape(Rectangle())
                             }
@@ -116,7 +142,9 @@ struct TaskCalendarCard: View {
 
                     Spacer(minLength: 0)
                 }
-                .padding(compact ? 8 : 12)
+                .padding(
+                    veryShort ? 5 : (compact ? 8 : 12)
+                )
                 .frame(
                     maxWidth: .infinity,
                     maxHeight: .infinity,
@@ -127,11 +155,17 @@ struct TaskCalendarCard: View {
                 width: geometry.size.width,
                 height: geometry.size.height
             )
-            .background(current.color.opacity(0.22))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .background(
+                current.color.opacity(0.22)
+            )
+            .clipShape(
+                RoundedRectangle(cornerRadius: 8)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(current.color.opacity(0.25))
+                    .stroke(
+                        current.color.opacity(0.25)
+                    )
                     .allowsHitTesting(false)
             }
             .contentShape(Rectangle())
