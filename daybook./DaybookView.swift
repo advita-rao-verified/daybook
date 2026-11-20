@@ -9,14 +9,16 @@
 import SwiftUI
 
 struct DaybookView: View {
+
     @StateObject private var store = TaskStore()
 
     @State private var selectedDate = Date()
     @State private var mode: CalendarMode = .week
     @State private var editorRequest: EditorRequest?
-
-    // The date of the recurring occurrence being edited.
     @State private var editingOccurrenceDate: Date?
+
+    @State private var selectedSection: DaybookSection = .calendar
+    @State private var sidebarExpanded = true
 
     private var visibleDays: [Date] {
         switch mode {
@@ -40,7 +42,65 @@ struct DaybookView: View {
     }
 
     var body: some View {
+        HStack(spacing: 0) {
+
+            DaybookSidebar(
+                selectedSection: $selectedSection,
+                isExpanded: $sidebarExpanded
+            )
+
+            Group {
+                if selectedSection == .calendar {
+                    calendarContent
+                } else {
+                    placeholderContent
+                }
+            }
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity
+            )
+        }
+        .background(Noir.background)
+        .foregroundStyle(Noir.pale)
+        .sheet(item: $editorRequest) { request in
+            TaskEditor(
+                task: request.task,
+                initialDate: selectedDate,
+                occurrenceDate: request.task?.occurrenceDate,
+                save: { updated in
+                    store.save(updated)
+                    closeEditor()
+                },
+                delete: { task in
+                    store.delete(task)
+                    closeEditor()
+                },
+                deleteOccurrence: { task, date in
+                    guard let original = store.tasks.first(
+                        where: { $0.id == task.id }
+                    ) else {
+                        return
+                    }
+
+                    var occurrence = original
+                    occurrence.occurrenceDate = date
+
+                    store.deleteOccurrence(occurrence)
+                    closeEditor()
+                },
+                cancel: {
+                    closeEditor()
+                }
+            )
+        }
+    }
+
+    // MARK: - Calendar Content
+
+    private var calendarContent: some View {
         VStack(spacing: 0) {
+
             header
 
             Rectangle()
@@ -65,45 +125,40 @@ struct DaybookView: View {
                 )
             }
         }
-        .background(Noir.background)
-        .foregroundStyle(Noir.pale)
-        .sheet(item: $editorRequest) { request in
-            TaskEditor(
-                task: request.task,
-                initialDate: selectedDate,
-                occurrenceDate: request.task?.occurrenceDate,              save: { updated in
-                    store.save(updated)
-                    closeEditor()
-                },
-                delete: { task in
-                    store.delete(task)
-                    closeEditor()
-                },
-                deleteOccurrence: { task, date in
-                    guard let original = store.tasks.first(where: {
-                        $0.id == task.id
-                    }) else {
-                        return
-                    }
+    }
 
-                    var occurrence = original
-                    occurrence.occurrenceDate = date
+    // MARK: - Placeholder Pages
 
-                    store.deleteOccurrence(occurrence)
-                    closeEditor()
-                },
-                cancel: {
-                    closeEditor()
-                }
-            )
+    private var placeholderContent: some View {
+        VStack(spacing: 16) {
+
+            Image(systemName: selectedSection.icon)
+                .font(.system(size: 35))
+                .foregroundStyle(Noir.accent)
+
+            Text(selectedSection.rawValue)
+                .font(.system(
+                    size: 28,
+                    weight: .semibold
+                ))
+
+            Text("Coming soon to Daybook.")
+                .font(.system(size: 13))
+                .foregroundStyle(Noir.muted)
         }
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity
+        )
     }
 
     // MARK: - Header
 
     private var header: some View {
         VStack(spacing: 17) {
+
             HStack(spacing: 16) {
+
                 Image(systemName: "calendar")
                     .foregroundStyle(Noir.accent)
 
@@ -164,11 +219,13 @@ struct DaybookView: View {
             }
 
             HStack {
-                Text(selectedDate.formatted("MMMM yyyy"))
-                    .font(.system(
-                        size: 29,
-                        weight: .semibold
-                    ))
+                Text(
+                    selectedDate.formatted("MMMM yyyy")
+                )
+                .font(.system(
+                    size: 29,
+                    weight: .semibold
+                ))
 
                 Spacer()
 
@@ -180,12 +237,15 @@ struct DaybookView: View {
         .padding(22)
     }
 
-    // MARK: - Navigation
+    // MARK: - Date Navigation
 
     private func navigate(_ direction: Int) {
         switch mode {
+
         case .day:
-            selectedDate = selectedDate.addingDays(direction)
+            selectedDate = selectedDate.addingDays(
+                direction
+            )
 
         case .twoDays:
             selectedDate = selectedDate.addingDays(
@@ -206,9 +266,10 @@ struct DaybookView: View {
         }
     }
 
-    // MARK: - Editor
+    // MARK: - Task Editor
 
     private func openEditor(_ task: CalendarTask) {
+
         let original = store.tasks.first {
             $0.id == task.id
         } ?? task
@@ -220,7 +281,9 @@ struct DaybookView: View {
                 task.occurrenceDate ?? task.start
         }
 
-        editorRequest = EditorRequest(task: editableTask)
+        editorRequest = EditorRequest(
+            task: editableTask
+        )
     }
 
     private func closeEditor() {
