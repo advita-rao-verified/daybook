@@ -11,11 +11,8 @@ import CoreGraphics
 
 struct AdaptiveTimelineLayout {
 
-    // A single shared scale for all visible days.
     let points: [CGFloat]
 
-    // Each point represents one minute after midnight.
-    // There are 1,441 entries: 0...1440.
     var totalHeight: CGFloat {
         points.last ?? 0
     }
@@ -26,17 +23,13 @@ struct AdaptiveTimelineLayout {
     ) {
         let calendar = Calendar.current
 
-        // Count how many task boundaries fall in each
-        // 15-minute segment across all visible days.
-        var activity = Array(
-            repeating: 0,
-            count: 96
-        )
+        struct Interval {
+            let start: Int
+            let end: Int
+        }
 
-        var occupied = Array(
-            repeating: false,
-            count: 96
-        )
+        var intervals: [Interval] = []
+        var boundaries: Set<Int> = [0, 1440]
 
         for (index, day) in days.enumerated() {
             guard index < tasksByDay.count else {
@@ -46,19 +39,21 @@ struct AdaptiveTimelineLayout {
             let dayStart = calendar.startOfDay(for: day)
 
             for task in tasksByDay[index] {
-                let startMinute = max(
+                let start = max(
                     0,
                     min(
                         1440,
                         Int(
-                            task.start.timeIntervalSince(
-                                dayStart
-                            ) / 60
+                            floor(
+                                task.start.timeIntervalSince(
+                                    dayStart
+                                ) / 60
+                            )
                         )
                     )
                 )
 
-                let endMinute = max(
+                let end = max(
                     0,
                     min(
                         1440,
@@ -72,69 +67,81 @@ struct AdaptiveTimelineLayout {
                     )
                 )
 
-                guard endMinute > startMinute else {
+                guard end > start else {
                     continue
                 }
 
-                // Mark all occupied segments.
-                let first = startMinute / 15
-                let last = min(
-                    95,
-                    (endMinute - 1) / 15
+                intervals.append(
+                    Interval(start: start, end: end)
                 )
 
-                for segment in first...last {
-                    occupied[segment] = true
-                }
-
-                // Give additional space near task starts
-                // and ends, where labels tend to cluster.
-                let startSegment = min(
-                    95,
-                    startMinute / 15
-                )
-
-                let endSegment = min(
-                    95,
-                    max(0, endMinute - 1) / 15
-                )
-
-                activity[startSegment] += 1
-                activity[endSegment] += 1
+                boundaries.insert(start)
+                boundaries.insert(end)
             }
         }
 
-        var segmentHeights = Array(
+        // Start with the existing compact timeline.
+        var heights = Array(
             repeating: CGFloat(0),
-            count: 96
+            count: 1440
         )
 
-        for segment in 0..<96 {
-            let nearbyActivity = (
-                activity[max(0, segment - 1)]
-                + activity[segment]
-                + activity[min(95, segment + 1)]
-            )
+        for minute in 0..<1440 {
+            let active = intervals.filter {
+                $0.start <= minute && minute < $0.end
+            }
 
-            if nearbyActivity >= 4 {
-                // Very busy period
-                segmentHeights[segment] = 42
-            } else if nearbyActivity >= 2 {
-                // Several nearby tasks
-                segmentHeights[segment] = 31
-            } else if nearbyActivity >= 1 {
-                // Task begins or ends nearby
-                segmentHeights[segment] = 23
-            } else if occupied[segment] {
-                // Middle of a long task
-                segmentHeights[segment] = 9
+            if active.isEmpty {
+                heights[minute] = 0.35
             } else {
-                // Empty time
-                segmentHeights[segment] = 5
+                let shortestDuration = active.map {
+                    $0.end - $0.start
+                }.min() ?? 60
+
+                if shortestDuration <= 15 {
+                    heights[minute] = 3.5
+                } else if shortestDuration <= 30 {
+                    heights[minute] = 2.5
+                } else if shortestDuration <= 60 {
+                    heights[minute] = 1.5
+                } else if shortestDuration <= 120 {
+                    heights[minute] = 1.0
+                } else {
+                    heights[minute] = 0.45
+                }
             }
         }
 
-        // Build a continuous time-to-position lookup.
+        // Ensure every short task has enough room for
+        // both its title and its time.
+        for interval in intervals {
+            let duration = interval.end - interval.start
+
+            guard duration <= 30 else {
+                continue
+            }
+
+            let minimumHeight: CGFloat =
+                duration <= 15 ? 60 : 70
+
+            let existingHeight = (
+                interval.start..<interval.end
+            ).reduce(CGFloat(0)) {
+                $0 + heights[$1]
+            }
+
+            if existingHeight < minimumHeight {
+                let extraPerMinute = (
+                    minimumHeight - existingHeight
+                ) / CGFloat(duration)
+
+                for minute in interval.start..<interval.end {
+                    heights[minute] += extraPerMinute
+                }
+            }
+        }
+
+        // Build the shared mapping.
         var result = Array(
             repeating: CGFloat(0),
             count: 1441
@@ -143,11 +150,7 @@ struct AdaptiveTimelineLayout {
         var y: CGFloat = 0
 
         for minute in 0..<1440 {
-            let segment = minute / 15
-            let pixelsPerMinute =
-                segmentHeights[segment] / 15
-
-            y += pixelsPerMinute
+            y += heights[minute]
             result[minute + 1] = y
         }
 
@@ -171,8 +174,9 @@ struct AdaptiveTimelineLayout {
     }
 
     func y(for date: Date, on day: Date) -> CGFloat {
-        let calendar = Calendar.current
-        let dayStart = calendar.startOfDay(for: day)
+        let dayStart = Calendar.current.startOfDay(
+            for: day
+        )
 
         let minutes = CGFloat(
             date.timeIntervalSince(dayStart) / 60
