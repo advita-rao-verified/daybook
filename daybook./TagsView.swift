@@ -12,18 +12,32 @@ struct TagsView: View {
 
     @ObservedObject var store: TagStore
 
-    @State private var showingNewTag = false
-    @State private var newTagName = ""
+    @State private var showingTagEditor = false
+    @State private var editingTagID: UUID?
+    @State private var tagName = ""
     @State private var selectedPalette = DaybookPalettes.featured[0]
     @State private var showingAllPalettes = false
+    @State private var paletteSearch = ""
 
     @State private var subtagParent: DaybookTag?
-    @State private var newSubtagName = ""
+    @State private var editingSubtagID: UUID?
+    @State private var subtagName = ""
     @State private var selectedSubtagColor = ""
 
     private let columns = [
         GridItem(.adaptive(minimum: 260), spacing: 18)
     ]
+
+    private var availablePalettes: [TagPalette] {
+        let palettes = showingAllPalettes
+            ? DaybookPalettes.library
+            : DaybookPalettes.featured
+
+        return palettes.filter {
+            paletteSearch.isEmpty ||
+            $0.name.localizedCaseInsensitiveContains(paletteSearch)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -41,14 +55,16 @@ struct TagsView: View {
                 Spacer()
 
                 Button {
-                    showingNewTag = true
+                    openNewTag()
                 } label: {
                     Label("New Tag", systemImage: "plus")
                         .font(.system(size: 13, weight: .medium))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 11)
                         .background(Noir.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .clipShape(
+                            RoundedRectangle(cornerRadius: 10)
+                        )
                 }
                 .buttonStyle(.plain)
             }
@@ -72,11 +88,11 @@ struct TagsView: View {
             }
         }
         .background(Noir.background)
-        .sheet(isPresented: $showingNewTag) {
-            newTagSheet
+        .sheet(isPresented: $showingTagEditor) {
+            tagEditorSheet
         }
         .sheet(item: $subtagParent) { tag in
-            newSubtagSheet(for: tag)
+            subtagEditorSheet(for: tag)
         }
     }
 
@@ -96,7 +112,7 @@ struct TagsView: View {
                 .foregroundStyle(Noir.muted)
 
             Button("Create a Tag") {
-                showingNewTag = true
+                openNewTag()
             }
             .buttonStyle(.plain)
             .foregroundStyle(Noir.accent)
@@ -117,8 +133,18 @@ struct TagsView: View {
                 Spacer()
 
                 Menu {
-                    Button("Delete Tag", role: .destructive) {
+                    Button {
+                        openEditTag(tag)
+                    } label: {
+                        Label("Edit Tag", systemImage: "pencil")
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
                         store.deleteTag(id: tag.id)
+                    } label: {
+                        Label("Delete Tag", systemImage: "trash")
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -129,9 +155,12 @@ struct TagsView: View {
             }
 
             HStack(spacing: 5) {
-                ForEach(tag.palette.colors, id: \.self) { color in
+                ForEach(
+                    Array(tag.palette.colors.enumerated()),
+                    id: \.offset
+                ) { _, hex in
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(Color(hex: color))
+                        .fill(Color(hex: hex))
                         .frame(maxWidth: .infinity)
                         .frame(height: 29)
                 }
@@ -146,17 +175,15 @@ struct TagsView: View {
                 .frame(height: 1)
 
             HStack {
-                Text("S U B T A G S")
+                Text("SUBTAGS")
                     .font(.system(size: 9, weight: .semibold))
+                    .tracking(2)
                     .foregroundStyle(Noir.muted)
 
                 Spacer()
 
                 Button {
-                    newSubtagName = ""
-                    selectedSubtagColor =
-                        tag.palette.colors.first ?? "#722F42"
-                    subtagParent = tag
+                    openNewSubtag(for: tag)
                 } label: {
                     Label("Add Subtag", systemImage: "plus")
                         .font(.system(size: 11))
@@ -183,6 +210,16 @@ struct TagsView: View {
                         Spacer()
 
                         Button {
+                            openEditSubtag(subtag, in: tag)
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Noir.muted)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Edit subtag")
+
+                        Button {
                             store.deleteSubtag(
                                 tagID: tag.id,
                                 subtagID: subtag.id
@@ -202,22 +239,285 @@ struct TagsView: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Noir.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 15))
+        .clipShape(
+            RoundedRectangle(cornerRadius: 15)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: 15)
                 .stroke(Noir.grid, lineWidth: 1)
         }
     }
 
-    // MARK: - New Subtag Sheet
+    // MARK: - Open Tag Editors
 
-    private func newSubtagSheet(for tag: DaybookTag) -> some View {
+    private func openNewTag() {
+        editingTagID = nil
+        tagName = ""
+        selectedPalette = DaybookPalettes.featured[0]
+        showingAllPalettes = false
+        paletteSearch = ""
+        showingTagEditor = true
+    }
+
+    private func openEditTag(_ tag: DaybookTag) {
+        editingTagID = tag.id
+        tagName = tag.name
+        selectedPalette = tag.palette
+
+        let isFeatured = DaybookPalettes.featured.contains {
+            $0.name == tag.palette.name
+        }
+
+        showingAllPalettes = !isFeatured
+        paletteSearch = ""
+        showingTagEditor = true
+    }
+
+    private func saveTag() {
+        let name = tagName.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        guard !name.isEmpty else { return }
+
+        if let id = editingTagID {
+            store.renameTag(id: id, name: name)
+            store.updatePalette(
+                tagID: id,
+                palette: selectedPalette
+            )
+        } else {
+            store.addTag(
+                name: name,
+                palette: selectedPalette
+            )
+        }
+
+        showingTagEditor = false
+    }
+
+    // MARK: - Tag Editor Sheet
+
+    private var tagEditorSheet: some View {
+        VStack(alignment: .leading, spacing: 22) {
+
+            HStack {
+                Text(
+                    editingTagID == nil
+                        ? "Create a Tag"
+                        : "Edit Tag"
+                )
+                .font(.system(size: 24, weight: .semibold))
+
+                Spacer()
+
+                Button {
+                    showingTagEditor = false
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("TAG NAME")
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(2)
+                    .foregroundStyle(Noir.muted)
+
+                TextField("e.g. Homework", text: $tagName)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            HStack {
+                Text("CHOOSE A PALETTE")
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(2)
+                    .foregroundStyle(Noir.muted)
+
+                Spacer()
+
+                Button(
+                    showingAllPalettes
+                        ? "Featured"
+                        : "Explore More"
+                ) {
+                    showingAllPalettes.toggle()
+                    paletteSearch = ""
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(Noir.accent)
+            }
+
+            if showingAllPalettes {
+                TextField(
+                    "Search palettes...",
+                    text: $paletteSearch
+                )
+                .textFieldStyle(.roundedBorder)
+            }
+
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(availablePalettes) { palette in
+                        Button {
+                            selectedPalette = palette
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(
+                                    alignment: .leading,
+                                    spacing: 8
+                                ) {
+                                    Text(palette.name)
+                                        .font(.system(
+                                            size: 13,
+                                            weight: .medium
+                                        ))
+
+                                    HStack(spacing: 4) {
+                                        ForEach(
+                                            Array(
+                                                palette.colors.enumerated()
+                                            ),
+                                            id: \.offset
+                                        ) { _, hex in
+                                            RoundedRectangle(
+                                                cornerRadius: 3
+                                            )
+                                            .fill(Color(hex: hex))
+                                            .frame(
+                                                maxWidth: .infinity
+                                            )
+                                            .frame(height: 19)
+                                        }
+                                    }
+                                }
+
+                                if selectedPalette.name == palette.name {
+                                    Image(
+                                        systemName: "checkmark.circle.fill"
+                                    )
+                                    .foregroundStyle(Noir.accent)
+                                }
+                            }
+                            .padding(12)
+                            .background(Noir.field)
+                            .clipShape(
+                                RoundedRectangle(cornerRadius: 10)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 300)
+
+            if editingTagID != nil {
+                Text(
+                    "Existing subtags keep their colors when you change palettes."
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(Noir.muted)
+            }
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Spacer()
+
+                Button("Cancel") {
+                    showingTagEditor = false
+                }
+                .buttonStyle(.plain)
+
+                Button(
+                    editingTagID == nil
+                        ? "Create Tag"
+                        : "Save Changes"
+                ) {
+                    saveTag()
+                }
+                .disabled(
+                    tagName.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ).isEmpty
+                )
+                .buttonStyle(.plain)
+                .padding(.horizontal, 17)
+                .padding(.vertical, 10)
+                .background(Noir.accent)
+                .clipShape(
+                    RoundedRectangle(cornerRadius: 9)
+                )
+            }
+        }
+        .padding(28)
+        .frame(width: 460, height: 590)
+        .background(Noir.surface)
+        .foregroundStyle(Noir.pale)
+    }
+
+    // MARK: - Open Subtag Editors
+
+    private func openNewSubtag(for tag: DaybookTag) {
+        editingSubtagID = nil
+        subtagName = ""
+        selectedSubtagColor =
+            tag.palette.colors.first ?? "#722F42"
+        subtagParent = tag
+    }
+
+    private func openEditSubtag(
+        _ subtag: DaybookSubtag,
+        in tag: DaybookTag
+    ) {
+        editingSubtagID = subtag.id
+        subtagName = subtag.name
+        selectedSubtagColor = subtag.colorHex
+        subtagParent = tag
+    }
+
+    private func saveSubtag(for tag: DaybookTag) {
+        let name = subtagName.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        guard !name.isEmpty else { return }
+
+        if let id = editingSubtagID {
+            store.updateSubtag(
+                tagID: tag.id,
+                subtagID: id,
+                name: name,
+                colorHex: selectedSubtagColor
+            )
+        } else {
+            store.addSubtag(
+                to: tag.id,
+                name: name,
+                colorHex: selectedSubtagColor
+            )
+        }
+
+        subtagParent = nil
+    }
+
+    // MARK: - Subtag Editor Sheet
+
+    private func subtagEditorSheet(
+        for tag: DaybookTag
+    ) -> some View {
         VStack(alignment: .leading, spacing: 22) {
 
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("New Subtag")
-                        .font(.system(size: 24, weight: .semibold))
+                    Text(
+                        editingSubtagID == nil
+                            ? "New Subtag"
+                            : "Edit Subtag"
+                    )
+                    .font(.system(size: 24, weight: .semibold))
 
                     Text("Inside \(tag.name)")
                         .font(.system(size: 12))
@@ -242,7 +542,7 @@ struct TagsView: View {
 
                 TextField(
                     "e.g. Math, English, Science",
-                    text: $newSubtagName
+                    text: $subtagName
                 )
                 .textFieldStyle(.roundedBorder)
             }
@@ -254,7 +554,10 @@ struct TagsView: View {
                     .foregroundStyle(Noir.muted)
 
                 HStack(spacing: 12) {
-                    ForEach(tag.palette.colors, id: \.self) { hex in
+                    ForEach(
+                        Array(tag.palette.colors.enumerated()),
+                        id: \.offset
+                    ) { _, hex in
                         Button {
                             selectedSubtagColor = hex
                         } label: {
@@ -263,26 +566,41 @@ struct TagsView: View {
                                 .frame(width: 53, height: 53)
                                 .overlay {
                                     if selectedSubtagColor == hex {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(
-                                                size: 15,
-                                                weight: .bold
-                                            ))
-                                            .foregroundStyle(.white)
+                                        Image(
+                                            systemName: "checkmark"
+                                        )
+                                        .font(.system(
+                                            size: 15,
+                                            weight: .bold
+                                        ))
+                                        .foregroundStyle(.white)
                                     }
                                 }
                                 .overlay {
-                                    RoundedRectangle(cornerRadius: 9)
-                                        .stroke(
-                                            selectedSubtagColor == hex
-                                                ? Color.white
-                                                : Color.clear,
-                                            lineWidth: 2
-                                        )
+                                    RoundedRectangle(
+                                        cornerRadius: 9
+                                    )
+                                    .stroke(
+                                        selectedSubtagColor == hex
+                                            ? Color.white
+                                            : Color.clear,
+                                        lineWidth: 2
+                                    )
                                 }
                         }
                         .buttonStyle(.plain)
                     }
+                }
+
+                if editingSubtagID != nil &&
+                    !tag.palette.colors.contains(
+                        selectedSubtagColor
+                    ) {
+                    Text(
+                        "This subtag uses a shade from its previous palette. Choose a new shade to update it."
+                    )
+                    .font(.system(size: 11))
+                    .foregroundStyle(Noir.muted)
                 }
             }
 
@@ -296,24 +614,15 @@ struct TagsView: View {
                 }
                 .buttonStyle(.plain)
 
-                Button("Create Subtag") {
-                    let name = newSubtagName.trimmingCharacters(
-                        in: .whitespacesAndNewlines
-                    )
-
-                    guard !name.isEmpty else { return }
-
-                    store.addSubtag(
-                        to: tag.id,
-                        name: name,
-                        colorHex: selectedSubtagColor
-                    )
-
-                    subtagParent = nil
-                    newSubtagName = ""
+                Button(
+                    editingSubtagID == nil
+                        ? "Create Subtag"
+                        : "Save Changes"
+                ) {
+                    saveSubtag(for: tag)
                 }
                 .disabled(
-                    newSubtagName.trimmingCharacters(
+                    subtagName.trimmingCharacters(
                         in: .whitespacesAndNewlines
                     ).isEmpty
                 )
@@ -321,154 +630,13 @@ struct TagsView: View {
                 .padding(.horizontal, 17)
                 .padding(.vertical, 10)
                 .background(Noir.accent)
-                .clipShape(RoundedRectangle(cornerRadius: 9))
-            }
-        }
-        .padding(28)
-        .frame(width: 420, height: 360)
-        .background(Noir.surface)
-        .foregroundStyle(Noir.pale)
-    }
-
-    // MARK: - New Tag Sheet
-
-    private var newTagSheet: some View {
-        VStack(alignment: .leading, spacing: 22) {
-
-            HStack {
-                Text("Create a Tag")
-                    .font(.system(size: 24, weight: .semibold))
-
-                Spacer()
-
-                Button {
-                    showingNewTag = false
-                } label: {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(.plain)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("TAG NAME")
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(2)
-                    .foregroundStyle(Noir.muted)
-
-                TextField("e.g. Homework", text: $newTagName)
-                    .textFieldStyle(.roundedBorder)
-            }
-
-            HStack {
-                Text("CHOOSE A PALETTE")
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(2)
-                    .foregroundStyle(Noir.muted)
-
-                Spacer()
-
-                Button(showingAllPalettes ? "Featured" : "Explore More") {
-                    showingAllPalettes.toggle()
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(Noir.accent)
-            }
-
-            ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(
-                        showingAllPalettes
-                            ? DaybookPalettes.library
-                            : DaybookPalettes.featured
-                    ) { palette in
-
-                        Button {
-                            selectedPalette = palette
-                        } label: {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(palette.name)
-                                        .font(.system(
-                                            size: 13,
-                                            weight: .medium
-                                        ))
-
-                                    HStack(spacing: 4) {
-                                        ForEach(
-                                            palette.colors,
-                                            id: \.self
-                                        ) { hex in
-                                            RoundedRectangle(
-                                                cornerRadius: 3
-                                            )
-                                            .fill(Color(hex: hex))
-                                            .frame(maxWidth: .infinity)
-                                            .frame(height: 19)
-                                        }
-                                    }
-                                }
-
-                                if selectedPalette.id == palette.id {
-                                    Image(
-                                        systemName: "checkmark.circle.fill"
-                                    )
-                                    .foregroundStyle(Noir.accent)
-                                }
-                            }
-                            .padding(12)
-                            .background(Noir.field)
-                            .clipShape(
-                                RoundedRectangle(cornerRadius: 10)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .frame(maxHeight: 300)
-
-            Spacer(minLength: 0)
-
-            HStack {
-                Spacer()
-
-                Button("Cancel") {
-                    showingNewTag = false
-                }
-                .buttonStyle(.plain)
-
-                Button("Create Tag") {
-                    let name = newTagName.trimmingCharacters(
-                        in: .whitespacesAndNewlines
-                    )
-
-                    guard !name.isEmpty else { return }
-
-                    store.addTag(
-                        name: name,
-                        palette: selectedPalette
-                    )
-
-                    newTagName = ""
-                    selectedPalette = DaybookPalettes.featured[0]
-                    showingAllPalettes = false
-                    showingNewTag = false
-                }
-                .disabled(
-                    newTagName.trimmingCharacters(
-                        in: .whitespacesAndNewlines
-                    ).isEmpty
+                .clipShape(
+                    RoundedRectangle(cornerRadius: 9)
                 )
-                .buttonStyle(.plain)
-                .padding(.horizontal, 17)
-                .padding(.vertical, 10)
-                .background(Noir.accent)
-                .clipShape(RoundedRectangle(cornerRadius: 9))
             }
         }
         .padding(28)
-        .frame(width: 460, height: 570)
+        .frame(width: 420, height: 380)
         .background(Noir.surface)
         .foregroundStyle(Noir.pale)
     }
