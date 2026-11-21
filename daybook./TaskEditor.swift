@@ -348,6 +348,8 @@ struct TaskEditor: View {
         }
     }
     
+ 
+    
     // MARK: - Tags and Subtags
 
     private var selectedTag: DaybookTag? {
@@ -361,15 +363,12 @@ struct TaskEditor: View {
     }
 
     private var tagSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             sectionLabel("ORGANIZATION")
 
             HStack(spacing: 12) {
-
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("TAG")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Noir.muted)
+                    sectionLabel("TAG")
 
                     Picker("Tag", selection: $selectedTagID) {
                         Text("No Tag")
@@ -385,9 +384,7 @@ struct TaskEditor: View {
                 }
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("SUBTAG")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Noir.muted)
+                    sectionLabel("SUBTAG")
 
                     Picker("Subtag", selection: $selectedSubtagID) {
                         Text("No Subtag")
@@ -407,19 +404,80 @@ struct TaskEditor: View {
             }
 
             if let tag = selectedTag {
-                HStack(spacing: 8) {
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(Color(hex: colorHex))
-                        .frame(width: 15, height: 15)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("TAG PALETTE")
+                            .font(.system(
+                                size: 10,
+                                weight: .semibold
+                            ))
+                            .tracking(1.3)
+                            .foregroundStyle(Noir.muted)
 
-                    Text(
-                        selectedSubtag == nil
-                            ? "Using \(tag.name)'s palette"
-                            : "Color assigned from \(tag.name)"
-                    )
-                    .font(.system(size: 11))
-                    .foregroundStyle(Noir.muted)
+                        Spacer()
+
+                        Text(tag.palette.name)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Noir.muted)
+                    }
+
+                    HStack(spacing: 9) {
+                        ForEach(tag.palette.colors, id: \.self) { hex in
+                            Button {
+                                colorHex = hex
+                            } label: {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(hex: hex))
+                                    .frame(
+                                        maxWidth: .infinity
+                                    )
+                                    .frame(height: 42)
+                                    .overlay {
+                                        if colorHex == hex {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(
+                                                    size: 14,
+                                                    weight: .bold
+                                                ))
+                                                .foregroundStyle(.white)
+                                        }
+                                    }
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(
+                                                colorHex == hex
+                                                    ? Color.white
+                                                    : Color.clear,
+                                                lineWidth: 2
+                                            )
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                            .help("Use shade \(hex)")
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(Color(hex: colorHex))
+                            .frame(width: 10, height: 10)
+
+                        Text(
+                            selectedSubtag.map {
+                                "\($0.name) • \(tag.name)"
+                            } ?? "Choose a shade for this task"
+                        )
+                        .font(.system(size: 11))
+                        .foregroundStyle(Noir.muted)
+
+                        Spacer()
+
+                        Text(colorHex.uppercased())
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Noir.muted)
+                    }
                 }
+                .padding(.top, 4)
             }
         }
         .padding(14)
@@ -444,6 +502,7 @@ struct TaskEditor: View {
             }
         }
     }
+
 
 
     // MARK: - Colors
