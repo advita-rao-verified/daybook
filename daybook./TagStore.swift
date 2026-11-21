@@ -103,4 +103,48 @@ final class TagStore: ObservableObject {
 
         tags[index].palette = palette
     }
+    
+    // MARK: - Rename Tag
+
+    func renameTag(id: UUID, name: String) {
+        let cleaned = name.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        guard !cleaned.isEmpty,
+              let index = tags.firstIndex(where: { $0.id == id })
+        else {
+            return
+        }
+
+        tags[index].name = cleaned
+    }
+
+    // MARK: - Edit Subtag
+
+    func updateSubtag(
+        tagID: UUID,
+        subtagID: UUID,
+        name: String,
+        colorHex: String
+    ) {
+        let cleaned = name.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        guard !cleaned.isEmpty,
+              let tagIndex = tags.firstIndex(
+                where: { $0.id == tagID }
+              ),
+              let subtagIndex = tags[tagIndex].subtags.firstIndex(
+                where: { $0.id == subtagID }
+              )
+        else {
+            return
+        }
+
+        tags[tagIndex].subtags[subtagIndex].name = cleaned
+        tags[tagIndex].subtags[subtagIndex].colorHex = colorHex
+    }
+
 }
