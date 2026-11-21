@@ -1,5 +1,5 @@
 //
-//  TaskEditor.swift
+//  (TaskEditor).swift
 //  daybook.
 //
 //  Created by Advita Rao on 11/18/26.
@@ -10,6 +10,8 @@
 import SwiftUI
 
 struct TaskEditor: View {
+    @ObservedObject var tagStore: TagStore
+
     let task: CalendarTask?
     let initialDate: Date
     let occurrenceDate: Date?
@@ -23,6 +25,8 @@ struct TaskEditor: View {
     @State private var start = Date()
     @State private var end = Date()
     @State private var colorHex = "#963F4D"
+    @State private var selectedTagID: UUID?
+    @State private var selectedSubtagID: UUID?
     @State private var notes = ""
     @State private var subtasks: [Subtask] = []
     @State private var newSubtask = ""
@@ -64,6 +68,7 @@ struct TaskEditor: View {
                     nameField
                     dateFields
                     repeatSection
+                    tagSection
                     colorPicker
                     subtasksEditor
                     notesField
@@ -342,6 +347,104 @@ struct TaskEditor: View {
         default: return ""
         }
     }
+    
+    // MARK: - Tags and Subtags
+
+    private var selectedTag: DaybookTag? {
+        tagStore.tags.first { $0.id == selectedTagID }
+    }
+
+    private var selectedSubtag: DaybookSubtag? {
+        selectedTag?.subtags.first {
+            $0.id == selectedSubtagID
+        }
+    }
+
+    private var tagSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("ORGANIZATION")
+
+            HStack(spacing: 12) {
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("TAG")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Noir.muted)
+
+                    Picker("Tag", selection: $selectedTagID) {
+                        Text("No Tag")
+                            .tag(nil as UUID?)
+
+                        ForEach(tagStore.tags) { tag in
+                            Text(tag.name)
+                                .tag(Optional(tag.id))
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+                }
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("SUBTAG")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Noir.muted)
+
+                    Picker("Subtag", selection: $selectedSubtagID) {
+                        Text("No Subtag")
+                            .tag(nil as UUID?)
+
+                        if let tag = selectedTag {
+                            ForEach(tag.subtags) { subtag in
+                                Text(subtag.name)
+                                    .tag(Optional(subtag.id))
+                            }
+                        }
+                    }
+                    .labelsHidden()
+                    .disabled(selectedTag == nil)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+
+            if let tag = selectedTag {
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color(hex: colorHex))
+                        .frame(width: 15, height: 15)
+
+                    Text(
+                        selectedSubtag == nil
+                            ? "Using \(tag.name)'s palette"
+                            : "Color assigned from \(tag.name)"
+                    )
+                    .font(.system(size: 11))
+                    .foregroundStyle(Noir.muted)
+                }
+            }
+        }
+        .padding(14)
+        .background(Noir.field.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .onChange(of: selectedTagID) { _, newID in
+            selectedSubtagID = nil
+
+            if let tag = tagStore.tags.first(where: {
+                $0.id == newID
+            }) {
+                colorHex = tag.palette.colors.first ?? colorHex
+            }
+        }
+        .onChange(of: selectedSubtagID) { _, newID in
+            if let subtag = selectedTag?.subtags.first(where: {
+                $0.id == newID
+            }) {
+                colorHex = subtag.colorHex
+            } else if let tag = selectedTag {
+                colorHex = tag.palette.colors.first ?? colorHex
+            }
+        }
+    }
+
 
     // MARK: - Colors
 
@@ -528,6 +631,8 @@ struct TaskEditor: View {
             start = task.start
             end = task.end
             colorHex = task.colorHex
+            selectedTagID = task.tagID
+            selectedSubtagID = task.subtagID
             notes = task.notes
             subtasks = task.subtasks
             repeatsWeekly = task.repeatsWeekly
@@ -572,6 +677,8 @@ struct TaskEditor: View {
                 colorHex: colorHex,
                 notes: notes,
                 subtasks: subtasks,
+                tagID: selectedTagID,
+                subtagID: selectedSubtagID,
                 repeatsWeekly: repeatsWeekly,
                 repeatDays: repeatsWeekly ? repeatDays : [],
                 completedOccurrences:
