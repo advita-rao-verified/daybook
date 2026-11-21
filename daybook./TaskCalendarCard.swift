@@ -73,7 +73,6 @@ struct TaskCalendarCard: View {
             let current = currentTask
             let veryShort = height < 45
             let showSubtasks = height > 130
-            let showTag = height > 85
 
             HStack(alignment: .top, spacing: 0) {
                 Rectangle()
@@ -113,7 +112,7 @@ struct TaskCalendarCard: View {
 
                     // MARK: - Calendar Tag Indicator
 
-                    if showTag, let label = tagLabel {
+                    if let label = tagLabel {
                         tagIndicator(label: label, compact: compact)
                             .padding(.top, 5)
                     }

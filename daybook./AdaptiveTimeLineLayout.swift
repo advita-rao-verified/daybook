@@ -112,17 +112,18 @@ struct AdaptiveTimelineLayout {
             }
         }
 
-        // Ensure every short task has enough room for
-        // both its title and its time.
+        // Give short tasks enough room for their
+        // title, time, and tag badge.
         for interval in intervals {
             let duration = interval.end - interval.start
 
-            guard duration <= 30 else {
+            guard duration <= 60 else {
                 continue
             }
 
             let minimumHeight: CGFloat =
-                duration <= 15 ? 60 : 70
+                duration <= 15 ? 105 :
+                duration <= 30 ? 115 : 125
 
             let existingHeight = (
                 interval.start..<interval.end
