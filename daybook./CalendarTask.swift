@@ -23,6 +23,10 @@ struct CalendarTask: Identifiable, Codable {
     var colorHex: String
     var notes: String = ""
     var subtasks: [Subtask] = []
+    // MARK: - Tag Organization
+    
+    var tagID: UUID? = nil
+    var subtagID: UUID? = nil
 
     // MARK: - Weekly Recurrence
 
@@ -73,6 +77,8 @@ struct CalendarTask: Identifiable, Codable {
         case occurrenceDate
         case completedOccurrences
         case excludedDates
+        case tagID
+        case subtagID
     }
 
     // MARK: - Initializer
@@ -85,11 +91,14 @@ struct CalendarTask: Identifiable, Codable {
         colorHex: String,
         notes: String = "",
         subtasks: [Subtask] = [],
+        tagID: UUID? = nil,
+        subtagID: UUID? = nil,
         repeatsWeekly: Bool = false,
         repeatDays: Set<Int> = [],
         occurrenceDate: Date? = nil,
         completedOccurrences: [String: Set<UUID>] = [:],
         excludedDates: Set<String> = []
+        
     ) {
         self.id = id
         self.title = title
@@ -98,6 +107,8 @@ struct CalendarTask: Identifiable, Codable {
         self.colorHex = colorHex
         self.notes = notes
         self.subtasks = subtasks
+        self.tagID = tagID
+        self.subtagID = subtagID
 
         self.repeatsWeekly = repeatsWeekly
         self.repeatDays = repeatDays
@@ -174,6 +185,16 @@ struct CalendarTask: Identifiable, Codable {
             Set<String>.self,
             forKey: .excludedDates
         ) ?? []
+        tagID = try container.decodeIfPresent(
+            UUID.self,
+            forKey: .tagID
+        )
+
+        subtagID = try container.decodeIfPresent(
+            UUID.self,
+            forKey: .subtagID
+        )
     }
+    
 }
 
