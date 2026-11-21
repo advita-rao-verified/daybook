@@ -15,7 +15,10 @@ struct TaskCalendarCard: View {
     @ObservedObject var tagStore: TagStore
 
     let openDetails: () -> Void
+
     @State private var showingTagPopover = false
+
+    // MARK: - Current Task
 
     private var currentTask: CalendarTask {
         if task.repeatsWeekly,
@@ -29,6 +32,8 @@ struct TaskCalendarCard: View {
             $0.id == task.id
         } ?? task
     }
+
+    // MARK: - Tag Information
 
     private var assignedTag: DaybookTag? {
         guard let id = currentTask.tagID else {
@@ -51,11 +56,7 @@ struct TaskCalendarCard: View {
     }
 
     private var tagLabel: String? {
-        if let subtag = assignedSubtag {
-            return subtag.name
-        }
-
-        return assignedTag?.name
+        assignedSubtag?.name ?? assignedTag?.name
     }
 
     private var tagColor: Color {
@@ -66,20 +67,31 @@ struct TaskCalendarCard: View {
         return assignedTag?.primaryColor ?? currentTask.color
     }
 
+    // MARK: - Main View
+
     var body: some View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 180
             let height = geometry.size.height
             let current = currentTask
-            let veryShort = height < 45
-            let showSubtasks = height > 130
+
+            let hasTag = tagLabel != nil
+
+            // Keep short tasks readable.
+            // Reserve room for the tag before showing subtasks.
+            let showSubtasks = height > (hasTag ? 165 : 130)
+
+            let horizontalPadding: CGFloat = compact ? 8 : 12
+            let verticalPadding: CGFloat = 8
 
             HStack(alignment: .top, spacing: 0) {
                 Rectangle()
                     .fill(current.color)
                     .frame(width: 5)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 5) {
+
+                    // MARK: - Task Title
 
                     Button(action: openDetails) {
                         Text(current.title)
@@ -87,7 +99,8 @@ struct TaskCalendarCard: View {
                                 size: compact ? 12 : 16,
                                 weight: .semibold
                             ))
-                            .lineLimit(height > 110 ? 3 : 1)
+                            .lineLimit(height > 150 ? 3 : 1)
+                            .truncationMode(.tail)
                             .frame(
                                 maxWidth: .infinity,
                                 alignment: .leading
@@ -96,7 +109,8 @@ struct TaskCalendarCard: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Always prioritize the task's time.
+                    // MARK: - Task Time
+
                     Text(
                         "\(current.start.formatted("HH:mm")) – " +
                         current.end.formatted("HH:mm")
@@ -110,11 +124,14 @@ struct TaskCalendarCard: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
 
-                    // MARK: - Calendar Tag Indicator
+                    // MARK: - Always Visible Tag
 
                     if let label = tagLabel {
-                        tagIndicator(label: label, compact: compact)
-                            .padding(.top, 5)
+                        tagIndicator(
+                            label: label,
+                            compact: compact
+                        )
+                        .padding(.top, 3)
                     }
 
                     // MARK: - Subtasks
@@ -174,9 +191,8 @@ struct TaskCalendarCard: View {
 
                     Spacer(minLength: 0)
                 }
-                .padding(
-                    veryShort ? 5 : (compact ? 8 : 12)
-                )
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, verticalPadding)
                 .frame(
                     maxWidth: .infinity,
                     maxHeight: .infinity,
@@ -187,9 +203,7 @@ struct TaskCalendarCard: View {
                 width: geometry.size.width,
                 height: geometry.size.height
             )
-            .background(
-                current.color.opacity(0.22)
-            )
+            .background(current.color.opacity(0.22))
             .clipShape(
                 RoundedRectangle(cornerRadius: 8)
             )
@@ -202,6 +216,8 @@ struct TaskCalendarCard: View {
             }
         }
     }
+
+    // MARK: - Clickable Tag Indicator
 
     private func tagIndicator(
         label: String,
@@ -224,8 +240,13 @@ struct TaskCalendarCard: View {
                     .foregroundStyle(Noir.pale)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(
+                maxWidth: .infinity,
+                alignment: .leading
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -242,7 +263,10 @@ struct TaskCalendarCard: View {
     private var tagPopover: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("TASK ORGANIZATION")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(
+                    size: 10,
+                    weight: .semibold
+                ))
                 .tracking(2)
                 .foregroundStyle(Noir.muted)
 
@@ -291,7 +315,10 @@ struct TaskCalendarCard: View {
             }
         }
         .padding(20)
-        .frame(width: 230, alignment: .leading)
+        .frame(
+            width: 230,
+            alignment: .leading
+        )
         .background(Noir.surface)
         .foregroundStyle(Noir.pale)
         .preferredColorScheme(.dark)
