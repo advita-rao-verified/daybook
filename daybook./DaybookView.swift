@@ -125,6 +125,7 @@ struct DaybookView: View {
                 CalendarTimeline(
                     days: visibleDays,
                     store: store,
+                    tagStore: tagStore,
                     edit: openEditor
                 )
             }

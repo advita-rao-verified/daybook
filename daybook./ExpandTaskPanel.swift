@@ -6,16 +6,20 @@
 //
 
 
-
 import SwiftUI
 
 struct ExpandedTaskPanel: View {
     let taskID: UUID
     let occurrenceDate: Date?
+
     @ObservedObject var store: TaskStore
+    @ObservedObject var tagStore: TagStore
+
     let edit: () -> Void
 
     @State private var newSubtask = ""
+
+    // MARK: - Current Task
 
     private var task: CalendarTask? {
         guard let original = store.tasks.first(where: {
@@ -32,6 +36,42 @@ struct ExpandedTaskPanel: View {
 
         return original
     }
+
+    // MARK: - Assigned Tags
+
+    private var assignedTag: DaybookTag? {
+        guard let tagID = task?.tagID else {
+            return nil
+        }
+
+        return tagStore.tags.first {
+            $0.id == tagID
+        }
+    }
+
+    private var assignedSubtag: DaybookSubtag? {
+        guard let subtagID = task?.subtagID else {
+            return nil
+        }
+
+        return assignedTag?.subtags.first {
+            $0.id == subtagID
+        }
+    }
+
+    private var tagLabel: String? {
+        assignedSubtag?.name ?? assignedTag?.name
+    }
+
+    private var tagColor: Color {
+        if let subtag = assignedSubtag {
+            return Color(hex: subtag.colorHex)
+        }
+
+        return assignedTag?.primaryColor ?? Noir.accent
+    }
+
+    // MARK: - Main View
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -58,6 +98,34 @@ struct ExpandedTaskPanel: View {
                         )
                         .foregroundStyle(Noir.muted)
 
+                        // MARK: - Tag Indicator
+
+                        if let label = tagLabel {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(tagColor)
+                                    .frame(width: 10, height: 10)
+
+                                Text(label.uppercased())
+                                    .font(.system(
+                                        size: 11,
+                                        weight: .semibold
+                                    ))
+                                    .tracking(1.8)
+                                    .foregroundStyle(Noir.pale)
+                                    .lineLimit(1)
+                            }
+                            .padding(.top, 7)
+                            .help(
+                                assignedTag.map {
+                                    "Tag: \($0.name)" +
+                                    (assignedSubtag.map {
+                                        " • Subtag: \($0.name)"
+                                    } ?? "")
+                                } ?? ""
+                            )
+                        }
+
                         if task.repeatsWeekly {
                             Label(
                                 "Repeats weekly",
@@ -65,6 +133,7 @@ struct ExpandedTaskPanel: View {
                             )
                             .font(.system(size: 11))
                             .foregroundStyle(Noir.accent)
+                            .padding(.top, 3)
                         }
                     }
 
@@ -78,6 +147,8 @@ struct ExpandedTaskPanel: View {
                     .help("Edit repeating series")
                 }
 
+                // MARK: - Subtask Progress
+
                 if !task.subtasks.isEmpty {
                     ProgressView(value: task.progress)
                         .tint(task.color)
@@ -89,6 +160,8 @@ struct ExpandedTaskPanel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Noir.muted)
                 }
+
+                // MARK: - Existing Subtasks
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 13) {
@@ -103,8 +176,8 @@ struct ExpandedTaskPanel: View {
                                 } label: {
                                     Image(
                                         systemName: subtask.isDone
-                                        ? "checkmark.square.fill"
-                                        : "square"
+                                            ? "checkmark.square.fill"
+                                            : "square"
                                     )
                                     .foregroundStyle(task.color)
                                 }
@@ -132,6 +205,8 @@ struct ExpandedTaskPanel: View {
                 }
                 .frame(maxHeight: 280)
 
+                // MARK: - Add Subtask
+
                 HStack {
                     TextField(
                         "Add a subtask...",
@@ -156,11 +231,14 @@ struct ExpandedTaskPanel: View {
         .foregroundStyle(Noir.pale)
     }
 
+    // MARK: - Add Subtask
+
     private func addSubtask() {
         store.addSubtask(
             taskID: taskID,
             title: newSubtask
         )
+
         newSubtask = ""
     }
 }

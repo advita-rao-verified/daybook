@@ -10,7 +10,10 @@ import SwiftUI
 
 struct CalendarTimeline: View {
     let days: [Date]
+
     @ObservedObject var store: TaskStore
+    @ObservedObject var tagStore: TagStore
+
     let edit: (CalendarTask) -> Void
 
     private let gutter: CGFloat = 72
@@ -26,17 +29,18 @@ struct CalendarTimeline: View {
 
     var body: some View {
         VStack(spacing: 0) {
+
+            // MARK: - Calendar Header
+
             HStack(spacing: 0) {
                 Color.clear
                     .frame(width: gutter)
 
                 ForEach(days, id: \.self) { day in
                     VStack(spacing: 4) {
-                        Text(
-                            day.formatted("EEE").uppercased()
-                        )
-                        .font(.system(size: 10))
-                        .foregroundStyle(Noir.muted)
+                        Text(day.formatted("EEE").uppercased())
+                            .font(.system(size: 10))
+                            .foregroundStyle(Noir.muted)
 
                         Text(day.formatted("d"))
                             .font(.system(
@@ -55,6 +59,8 @@ struct CalendarTimeline: View {
             .frame(height: 70)
 
             Divider()
+
+            // MARK: - Calendar Timeline
 
             ScrollView(.vertical) {
                 GeometryReader { geometry in
@@ -76,10 +82,7 @@ struct CalendarTimeline: View {
                             }
                         )
 
-                        HStack(
-                            alignment: .top,
-                            spacing: 0
-                        ) {
+                        HStack(alignment: .top, spacing: 0) {
                             Color.clear
                                 .frame(width: gutter)
 
@@ -88,6 +91,7 @@ struct CalendarTimeline: View {
                                     day: day,
                                     tasks: store.tasks(on: day),
                                     store: store,
+                                    tagStore: tagStore,
                                     layout: sharedLayout,
                                     edit: edit
                                 )

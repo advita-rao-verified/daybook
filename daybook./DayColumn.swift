@@ -6,7 +6,6 @@
 //
 
 
-
 import SwiftUI
 
 struct DayColumn: View {
@@ -14,6 +13,7 @@ struct DayColumn: View {
     let tasks: [CalendarTask]
 
     @ObservedObject var store: TaskStore
+    @ObservedObject var tagStore: TagStore
 
     let layout: AdaptiveTimelineLayout
     let edit: (CalendarTask) -> Void
@@ -21,6 +21,7 @@ struct DayColumn: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
+
                 Rectangle()
                     .fill(Noir.grid)
                     .frame(
@@ -36,6 +37,7 @@ struct DayColumn: View {
                         width: geometry.size.width,
                         layout: layout,
                         store: store,
+                        tagStore: tagStore,
                         edit: edit
                     )
                 }

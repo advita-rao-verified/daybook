@@ -9,10 +9,13 @@
 import SwiftUI
 
 struct TaskCalendarCard: View {
-
     let task: CalendarTask
+
     @ObservedObject var store: TaskStore
+    @ObservedObject var tagStore: TagStore
+
     let openDetails: () -> Void
+    @State private var showingTagPopover = false
 
     private var currentTask: CalendarTask {
         if task.repeatsWeekly,
@@ -27,18 +30,52 @@ struct TaskCalendarCard: View {
         } ?? task
     }
 
+    private var assignedTag: DaybookTag? {
+        guard let id = currentTask.tagID else {
+            return nil
+        }
+
+        return tagStore.tags.first {
+            $0.id == id
+        }
+    }
+
+    private var assignedSubtag: DaybookSubtag? {
+        guard let id = currentTask.subtagID else {
+            return nil
+        }
+
+        return assignedTag?.subtags.first {
+            $0.id == id
+        }
+    }
+
+    private var tagLabel: String? {
+        if let subtag = assignedSubtag {
+            return subtag.name
+        }
+
+        return assignedTag?.name
+    }
+
+    private var tagColor: Color {
+        if let subtag = assignedSubtag {
+            return Color(hex: subtag.colorHex)
+        }
+
+        return assignedTag?.primaryColor ?? currentTask.color
+    }
+
     var body: some View {
         GeometryReader { geometry in
-
             let compact = geometry.size.width < 180
             let height = geometry.size.height
             let current = currentTask
-
             let veryShort = height < 45
             let showSubtasks = height > 130
+            let showTag = height > 85
 
             HStack(alignment: .top, spacing: 0) {
-
                 Rectangle()
                     .fill(current.color)
                     .frame(width: 5)
@@ -51,9 +88,7 @@ struct TaskCalendarCard: View {
                                 size: compact ? 12 : 16,
                                 weight: .semibold
                             ))
-                            .lineLimit(
-                                height > 110 ? 3 : 1
-                            )
+                            .lineLimit(height > 110 ? 3 : 1)
                             .frame(
                                 maxWidth: .infinity,
                                 alignment: .leading
@@ -76,14 +111,19 @@ struct TaskCalendarCard: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
 
-                    if !current.subtasks.isEmpty
-                        && showSubtasks {
+                    // MARK: - Calendar Tag Indicator
 
-                        ProgressView(
-                            value: current.progress
-                        )
-                        .tint(current.color)
-                        .padding(.top, 5)
+                    if showTag, let label = tagLabel {
+                        tagIndicator(label: label, compact: compact)
+                            .padding(.top, 5)
+                    }
+
+                    // MARK: - Subtasks
+
+                    if !current.subtasks.isEmpty && showSubtasks {
+                        ProgressView(value: current.progress)
+                            .tint(current.color)
+                            .padding(.top, 5)
 
                         ForEach(
                             Array(
@@ -92,35 +132,28 @@ struct TaskCalendarCard: View {
                                 )
                             )
                         ) { subtask in
-
                             Button {
                                 store.toggle(
                                     taskID: current.id,
                                     subtaskID: subtask.id,
-                                    occurrenceDate:
-                                        current.occurrenceDate
+                                    occurrenceDate: current.occurrenceDate
                                 )
                             } label: {
-
                                 HStack(spacing: 6) {
-
                                     Image(
-                                        systemName:
-                                            subtask.isDone
+                                        systemName: subtask.isDone
                                             ? "checkmark.square.fill"
                                             : "square"
                                     )
                                     .foregroundStyle(
                                         subtask.isDone
-                                        ? current.color
-                                        : Noir.pale
+                                            ? current.color
+                                            : Noir.pale
                                     )
 
                                     Text(subtask.title)
                                         .lineLimit(1)
-                                        .strikethrough(
-                                            subtask.isDone
-                                        )
+                                        .strikethrough(subtask.isDone)
                                         .frame(
                                             maxWidth: .infinity,
                                             alignment: .leading
@@ -131,8 +164,8 @@ struct TaskCalendarCard: View {
                                 ))
                                 .foregroundStyle(
                                     subtask.isDone
-                                    ? Noir.muted
-                                    : Noir.pale
+                                        ? Noir.muted
+                                        : Noir.pale
                                 )
                                 .contentShape(Rectangle())
                             }
@@ -168,10 +201,100 @@ struct TaskCalendarCard: View {
                     )
                     .allowsHitTesting(false)
             }
+        }
+    }
+
+    private func tagIndicator(
+        label: String,
+        compact: Bool
+    ) -> some View {
+        Button {
+            showingTagPopover = true
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(tagColor)
+                    .frame(width: 8, height: 8)
+
+                Text(label.uppercased())
+                    .font(.system(
+                        size: compact ? 9 : 10,
+                        weight: .semibold
+                    ))
+                    .tracking(compact ? 1 : 1.5)
+                    .foregroundStyle(Noir.pale)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .onTapGesture {
-                openDetails()
+        }
+        .buttonStyle(.plain)
+        .popover(
+            isPresented: $showingTagPopover,
+            arrowEdge: .trailing
+        ) {
+            tagPopover
+        }
+    }
+
+    // MARK: - Tag Details Popup
+
+    private var tagPopover: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("TASK ORGANIZATION")
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(2)
+                .foregroundStyle(Noir.muted)
+
+            if let tag = assignedTag {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(tag.primaryColor)
+                        .frame(width: 12, height: 12)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("TAG")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Noir.muted)
+
+                        Text(tag.name)
+                            .font(.system(
+                                size: 14,
+                                weight: .medium
+                            ))
+                    }
+                }
+
+                if let subtag = assignedSubtag {
+                    Rectangle()
+                        .fill(Noir.grid)
+                        .frame(height: 1)
+
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(Color(hex: subtag.colorHex))
+                            .frame(width: 12, height: 12)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("SUBTAG")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Noir.muted)
+
+                            Text(subtag.name)
+                                .font(.system(
+                                    size: 14,
+                                    weight: .medium
+                                ))
+                        }
+                    }
+                }
             }
         }
+        .padding(20)
+        .frame(width: 230, alignment: .leading)
+        .background(Noir.surface)
+        .foregroundStyle(Noir.pale)
+        .preferredColorScheme(.dark)
     }
 }

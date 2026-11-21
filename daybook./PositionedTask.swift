@@ -16,6 +16,8 @@ struct PositionedTask: View {
     let layout: AdaptiveTimelineLayout
 
     @ObservedObject var store: TaskStore
+    @ObservedObject var tagStore: TagStore
+    
 
     let edit: (CalendarTask) -> Void
 
@@ -119,6 +121,7 @@ struct PositionedTask: View {
         TaskCalendarCard(
             task: task,
             store: store,
+            tagStore: tagStore,
             openDetails: {
                 expanded = true
             }
@@ -133,6 +136,7 @@ struct PositionedTask: View {
                 taskID: task.id,
                 occurrenceDate: task.occurrenceDate,
                 store: store,
+                tagStore: tagStore,
                 edit: {
                     editAfterDismiss = true
                     expanded = false
