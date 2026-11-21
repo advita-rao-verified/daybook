@@ -17,14 +17,16 @@ struct TagsView: View {
     @State private var selectedPalette = DaybookPalettes.featured[0]
     @State private var showingAllPalettes = false
 
+    @State private var subtagParent: DaybookTag?
+    @State private var newSubtagName = ""
+    @State private var selectedSubtagColor = ""
+
     private let columns = [
         GridItem(.adaptive(minimum: 260), spacing: 18)
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-
-            // MARK: Header
 
             HStack {
                 VStack(alignment: .leading, spacing: 6) {
@@ -73,9 +75,12 @@ struct TagsView: View {
         .sheet(isPresented: $showingNewTag) {
             newTagSheet
         }
+        .sheet(item: $subtagParent) { tag in
+            newSubtagSheet(for: tag)
+        }
     }
 
-    // MARK: Empty State
+    // MARK: - Empty State
 
     private var emptyState: some View {
         VStack(spacing: 15) {
@@ -100,7 +105,7 @@ struct TagsView: View {
         .frame(maxWidth: .infinity, minHeight: 380)
     }
 
-    // MARK: Tag Card
+    // MARK: - Tag Card
 
     private func tagCard(_ tag: DaybookTag) -> some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -140,9 +145,25 @@ struct TagsView: View {
                 .fill(Noir.grid)
                 .frame(height: 1)
 
-            Text("S U B T A G S")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Noir.muted)
+            HStack {
+                Text("S U B T A G S")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Noir.muted)
+
+                Spacer()
+
+                Button {
+                    newSubtagName = ""
+                    selectedSubtagColor =
+                        tag.palette.colors.first ?? "#722F42"
+                    subtagParent = tag
+                } label: {
+                    Label("Add Subtag", systemImage: "plus")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Noir.accent)
+                }
+                .buttonStyle(.plain)
+            }
 
             if tag.subtags.isEmpty {
                 Text("No subtags yet")
@@ -153,12 +174,28 @@ struct TagsView: View {
                     HStack(spacing: 8) {
                         Circle()
                             .fill(Color(hex: subtag.colorHex))
-                            .frame(width: 8, height: 8)
+                            .frame(width: 9, height: 9)
 
                         Text(subtag.name.uppercased())
                             .font(.system(size: 10, weight: .medium))
                             .tracking(1.5)
+
+                        Spacer()
+
+                        Button {
+                            store.deleteSubtag(
+                                tagID: tag.id,
+                                subtagID: subtag.id
+                            )
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Noir.muted)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete subtag")
                     }
+                    .padding(.vertical, 3)
                 }
             }
         }
@@ -172,7 +209,128 @@ struct TagsView: View {
         }
     }
 
-    // MARK: New Tag Sheet
+    // MARK: - New Subtag Sheet
+
+    private func newSubtagSheet(for tag: DaybookTag) -> some View {
+        VStack(alignment: .leading, spacing: 22) {
+
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("New Subtag")
+                        .font(.system(size: 24, weight: .semibold))
+
+                    Text("Inside \(tag.name)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Noir.muted)
+                }
+
+                Spacer()
+
+                Button {
+                    subtagParent = nil
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("SUBTAG NAME")
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(2)
+                    .foregroundStyle(Noir.muted)
+
+                TextField(
+                    "e.g. Math, English, Science",
+                    text: $newSubtagName
+                )
+                .textFieldStyle(.roundedBorder)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("CHOOSE A SHADE")
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(2)
+                    .foregroundStyle(Noir.muted)
+
+                HStack(spacing: 12) {
+                    ForEach(tag.palette.colors, id: \.self) { hex in
+                        Button {
+                            selectedSubtagColor = hex
+                        } label: {
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(Color(hex: hex))
+                                .frame(width: 53, height: 53)
+                                .overlay {
+                                    if selectedSubtagColor == hex {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(
+                                                size: 15,
+                                                weight: .bold
+                                            ))
+                                            .foregroundStyle(.white)
+                                    }
+                                }
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 9)
+                                        .stroke(
+                                            selectedSubtagColor == hex
+                                                ? Color.white
+                                                : Color.clear,
+                                            lineWidth: 2
+                                        )
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Spacer()
+
+            HStack {
+                Spacer()
+
+                Button("Cancel") {
+                    subtagParent = nil
+                }
+                .buttonStyle(.plain)
+
+                Button("Create Subtag") {
+                    let name = newSubtagName.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+
+                    guard !name.isEmpty else { return }
+
+                    store.addSubtag(
+                        to: tag.id,
+                        name: name,
+                        colorHex: selectedSubtagColor
+                    )
+
+                    subtagParent = nil
+                    newSubtagName = ""
+                }
+                .disabled(
+                    newSubtagName.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ).isEmpty
+                )
+                .buttonStyle(.plain)
+                .padding(.horizontal, 17)
+                .padding(.vertical, 10)
+                .background(Noir.accent)
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+            }
+        }
+        .padding(28)
+        .frame(width: 420, height: 360)
+        .background(Noir.surface)
+        .foregroundStyle(Noir.pale)
+    }
+
+    // MARK: - New Tag Sheet
 
     private var newTagSheet: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -245,9 +403,7 @@ struct TagsView: View {
                                                 cornerRadius: 3
                                             )
                                             .fill(Color(hex: hex))
-                                            .frame(
-                                                maxWidth: .infinity
-                                            )
+                                            .frame(maxWidth: .infinity)
                                             .frame(height: 19)
                                         }
                                     }
@@ -308,9 +464,7 @@ struct TagsView: View {
                 .padding(.horizontal, 17)
                 .padding(.vertical, 10)
                 .background(Noir.accent)
-                .clipShape(
-                    RoundedRectangle(cornerRadius: 9)
-                )
+                .clipShape(RoundedRectangle(cornerRadius: 9))
             }
         }
         .padding(28)
@@ -319,4 +473,3 @@ struct TagsView: View {
         .foregroundStyle(Noir.pale)
     }
 }
-
