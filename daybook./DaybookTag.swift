@@ -52,6 +52,38 @@ enum DaybookPalettes {
                 "#B76E59"
             ]
         ),
+        
+        TagPalette(
+            name: "True Red",
+            colors: [
+                "#8B0000",
+                "#C00016",
+                "#E60023",
+                "#FF3131",
+                "#FF5757"
+            ]
+        ),
+        TagPalette(
+            name: "Muted Reds",
+            colors: [
+                "#A34A4A",
+                "#B96565",
+                "#C98181",
+                "#8F4247",
+                "#D9A0A0"
+            ]
+        ),
+        TagPalette(
+            name: "Dark Cherry",
+            colors: [
+                "#560F20",
+                "#75152C",
+                "#981F39",
+                "#B63850",
+                "#D05D70"
+            ]
+        ),
+
         TagPalette(
             name: "Matcha Morning",
             colors: [

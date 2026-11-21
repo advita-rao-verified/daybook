@@ -55,6 +55,11 @@ struct DaybookView: View {
                     calendarContent
                 } else if selectedSection == .tags {
                     TagsView(store: tagStore)
+                } else if selectedSection == .insights {
+                    InsightsView(
+                        store: store,
+                        tagStore: tagStore
+                    )
                 } else {
                     placeholderContent
                 }
