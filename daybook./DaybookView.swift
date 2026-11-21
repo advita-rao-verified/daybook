@@ -11,6 +11,7 @@ import SwiftUI
 struct DaybookView: View {
 
     @StateObject private var store = TaskStore()
+    @StateObject private var tagStore = TagStore()
 
     @State private var selectedDate = Date()
     @State private var mode: CalendarMode = .week
@@ -52,6 +53,8 @@ struct DaybookView: View {
             Group {
                 if selectedSection == .calendar {
                     calendarContent
+                } else if selectedSection == .tags {
+                    TagsView(store: tagStore)
                 } else {
                     placeholderContent
                 }
