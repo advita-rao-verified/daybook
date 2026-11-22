@@ -23,6 +23,11 @@ struct CalendarTask: Identifiable, Codable {
     var colorHex: String
     var notes: String = ""
     var subtasks: [Subtask] = []
+    // MARK: - Parent / Child Calendar Blocks
+
+    var parentTaskID: UUID? = nil
+
+    var isParentTask: Bool = false
     // MARK: - Tag Organization
     
     var tagID: UUID? = nil
@@ -65,6 +70,8 @@ struct CalendarTask: Identifiable, Codable {
     // MARK: - Coding Keys
 
     enum CodingKeys: String, CodingKey {
+        case parentTaskID
+        case isParentTask
         case id
         case title
         case start
@@ -121,9 +128,19 @@ struct CalendarTask: Identifiable, Codable {
     // MARK: - Decoder
 
     init(from decoder: Decoder) throws {
+        
         let container = try decoder.container(
             keyedBy: CodingKeys.self
         )
+        parentTaskID = try container.decodeIfPresent(
+            UUID.self,
+            forKey: .parentTaskID
+        )
+
+        isParentTask = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .isParentTask
+        ) ?? false
 
         id = try container.decode(
             UUID.self,

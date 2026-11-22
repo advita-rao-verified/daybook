@@ -80,6 +80,28 @@ enum TaskPalette {
         .init(name: "Dark Lavender", hex: "#51465F"),
         .init(name: "Amethyst", hex: "#76658B"),
         .init(name: "Lilac", hex: "#A08DB5"),
-        .init(name: "Lavender", hex: "#C8B9D5")
+        .init(name: "Lavender", hex: "#C8B9D5"),
+        
+        // MARK: - True Red
+        .init(name: "Dark Crimson", hex: "#8B0000"),
+        .init(name: "Rich Red", hex: "#C00016"),
+        .init(name: "Cherry Red", hex: "#E60023"),
+        .init(name: "True Red", hex: "#FF3131"),
+        .init(name: "Light Scarlet", hex: "#FF5757"),
+
+        // MARK: - Muted Reds
+        .init(name: "Dusty Red", hex: "#A34A4A"),
+        .init(name: "Muted Rose", hex: "#B96565"),
+        .init(name: "Soft Blush Red", hex: "#C98181"),
+        .init(name: "Vintage Red", hex: "#8F4247"),
+        .init(name: "Faded Rose", hex: "#D9A0A0"),
+
+        // MARK: - Dark Cherry
+        .init(name: "Deep Cherry", hex: "#560F20"),
+        .init(name: "Black Cherry", hex: "#75152C"),
+        .init(name: "Dark Raspberry", hex: "#981F39"),
+        .init(name: "Cherry Wine", hex: "#B63850"),
+        .init(name: "Soft Cherry", hex: "#D05D70"),
+
     ]
 }
