@@ -9,6 +9,7 @@
 import SwiftUI
 
 struct DayColumn: View {
+
     let day: Date
     let tasks: [CalendarTask]
 
@@ -17,6 +18,29 @@ struct DayColumn: View {
 
     let layout: AdaptiveTimelineLayout
     let edit: (CalendarTask) -> Void
+
+    // Parent tasks and standalone tasks appear
+    // directly on the main calendar.
+    //
+    // Children will be drawn inside their parents
+    // by PositionedTask in the next step.
+
+    private var visibleTasks: [CalendarTask] {
+        tasks.filter { task in
+
+            guard let parentID = task.parentTaskID else {
+                return true
+            }
+
+            // Hide a child from the top-level layout
+            // only if its parent is visible today.
+            let parentIsVisible = tasks.contains {
+                $0.id == parentID && $0.isParentTask
+            }
+
+            return !parentIsVisible
+        }
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -29,7 +53,7 @@ struct DayColumn: View {
                         height: layout.totalHeight
                     )
 
-                ForEach(tasks) { task in
+                ForEach(visibleTasks) { task in
                     PositionedTask(
                         task: task,
                         day: day,
