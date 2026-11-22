@@ -7,10 +7,13 @@
 
 
 
+
 import SwiftUI
 
 struct TaskEditor: View {
+
     @ObservedObject var tagStore: TagStore
+    @ObservedObject var store: TaskStore
 
     let task: CalendarTask?
     let initialDate: Date
@@ -25,14 +28,19 @@ struct TaskEditor: View {
     @State private var start = Date()
     @State private var end = Date()
     @State private var colorHex = "#963F4D"
+
     @State private var selectedTagID: UUID?
     @State private var selectedSubtagID: UUID?
+
     @State private var notes = ""
     @State private var subtasks: [Subtask] = []
     @State private var newSubtask = ""
 
     @State private var repeatsWeekly = false
     @State private var repeatDays: Set<Int> = []
+
+    @State private var isParentTask = false
+    @State private var selectedParentID: UUID?
 
     @State private var confirmDelete = false
     @State private var chooseRecurringDeletion = false
@@ -43,31 +51,66 @@ struct TaskEditor: View {
     )
 
     private let weekdays: [(name: String, number: Int)] = [
-        ("M", 2),
-        ("T", 3),
-        ("W", 4),
-        ("T", 5),
-        ("F", 6),
-        ("S", 7),
-        ("S", 1)
+        ("M", 2), ("T", 3), ("W", 4),
+        ("T", 5), ("F", 6), ("S", 7), ("S", 1)
     ]
 
+    // MARK: - Validation
+
     private var valid: Bool {
-        !title.trimmingCharacters(
+        let hasTitle = !title.trimmingCharacters(
             in: .whitespacesAndNewlines
         ).isEmpty
-        && end > start
-        && (!repeatsWeekly || !repeatDays.isEmpty)
+
+        let validTime = end > start
+        let validRepeat = !repeatsWeekly || !repeatDays.isEmpty
+
+        let validRelationship: Bool
+
+        if let parentID = selectedParentID {
+            validRelationship = availableParents.contains {
+                $0.id == parentID
+            }
+        } else {
+            validRelationship = true
+        }
+
+        let validChildren: Bool
+
+        if task?.isParentTask == true {
+            let children = store.tasks.filter {
+                $0.parentTaskID == task?.id
+            }
+
+            validChildren = isParentTask
+                && !repeatsWeekly
+                && children.allSatisfy {
+                    $0.start >= start && $0.end <= end
+                }
+        } else {
+            validChildren = true
+        }
+
+        return hasTitle
+            && validTime
+            && validRepeat
+            && validRelationship
+            && validChildren
     }
+
+    // MARK: - Main View
 
     var body: some View {
         VStack(spacing: 0) {
+
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 20) {
+
                     editorHeader
                     nameField
                     dateFields
                     repeatSection
+                    parentTaskSection
                     tagSection
                     colorPicker
                     subtasksEditor
@@ -87,27 +130,26 @@ struct TaskEditor: View {
         .preferredColorScheme(.dark)
         .onAppear(perform: loadTask)
 
-        // One-time task deletion confirmation
         .confirmationDialog(
             "Delete this task?",
             isPresented: $confirmDelete,
             titleVisibility: .visible
         ) {
             if let task {
-                Button(
-                    "Delete Task",
-                    role: .destructive
-                ) {
+                Button("Delete Task", role: .destructive) {
                     delete(task)
                 }
             }
 
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This task will be permanently deleted.")
+            Text(
+                task?.isParentTask == true
+                ? "Deleting this parent will also affect its child tasks."
+                : "This task will be permanently deleted."
+            )
         }
 
-        // Recurring task deletion choices
         .confirmationDialog(
             "Delete repeating task?",
             isPresented: $chooseRecurringDeletion,
@@ -134,8 +176,7 @@ struct TaskEditor: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
-                "Choose whether to remove only this date " +
-                "or every occurrence of the repeating task."
+                "Choose whether to remove only this date or every occurrence of the repeating task."
             )
         }
     }
@@ -192,10 +233,7 @@ struct TaskEditor: View {
                 DatePicker(
                     "",
                     selection: $start,
-                    displayedComponents: [
-                        .date,
-                        .hourAndMinute
-                    ]
+                    displayedComponents: [.date, .hourAndMinute]
                 )
                 .labelsHidden()
             }
@@ -208,10 +246,7 @@ struct TaskEditor: View {
                 DatePicker(
                     "",
                     selection: $end,
-                    displayedComponents: [
-                        .date,
-                        .hourAndMinute
-                    ]
+                    displayedComponents: [.date, .hourAndMinute]
                 )
                 .labelsHidden()
             }
@@ -222,6 +257,7 @@ struct TaskEditor: View {
 
     private var repeatSection: some View {
         VStack(alignment: .leading, spacing: 14) {
+
             Toggle(isOn: $repeatsWeekly) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Repeat weekly")
@@ -237,6 +273,11 @@ struct TaskEditor: View {
             }
             .toggleStyle(.switch)
             .tint(Noir.accent)
+            .disabled(
+                isParentTask
+                || selectedParentID != nil
+                || task?.isParentTask == true
+            )
 
             if repeatsWeekly {
                 VStack(alignment: .leading, spacing: 10) {
@@ -247,6 +288,7 @@ struct TaskEditor: View {
                             0..<weekdays.count,
                             id: \.self
                         ) { index in
+
                             let weekday = weekdays[index]
                             let selected = repeatDays.contains(
                                 weekday.number
@@ -254,13 +296,9 @@ struct TaskEditor: View {
 
                             Button {
                                 if selected {
-                                    repeatDays.remove(
-                                        weekday.number
-                                    )
+                                    repeatDays.remove(weekday.number)
                                 } else {
-                                    repeatDays.insert(
-                                        weekday.number
-                                    )
+                                    repeatDays.insert(weekday.number)
                                 }
                             } label: {
                                 Text(weekday.name)
@@ -279,9 +317,7 @@ struct TaskEditor: View {
                                     .clipShape(Circle())
                             }
                             .buttonStyle(.plain)
-                            .help(
-                                weekdayName(weekday.number)
-                            )
+                            .help(weekdayName(weekday.number))
                         }
                     }
 
@@ -347,13 +383,169 @@ struct TaskEditor: View {
         default: return ""
         }
     }
-    
- 
-    
+
+    // MARK: - Parent / Child Calendar Blocks
+
+    private var availableParents: [CalendarTask] {
+        store.tasks
+            .filter { candidate in
+                candidate.isParentTask
+                    && !candidate.repeatsWeekly
+                    && candidate.id != task?.id
+                    && candidate.start <= start
+                    && candidate.end >= end
+            }
+            .sorted { $0.start < $1.start }
+    }
+
+    private var parentTaskSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+
+            sectionLabel("CALENDAR BLOCK TYPE")
+
+            Toggle(isOn: $isParentTask) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Parent calendar block")
+                        .font(.system(
+                            size: 14,
+                            weight: .medium
+                        ))
+
+                    Text(
+                        "A larger event that contains smaller scheduled events."
+                    )
+                    .font(.system(size: 11))
+                    .foregroundStyle(Noir.muted)
+                }
+            }
+            .toggleStyle(.switch)
+            .tint(Noir.accent)
+            .disabled(
+                repeatsWeekly
+                || selectedParentID != nil
+                || (task?.isParentTask == true
+                    && !store.tasks.filter {
+                        $0.parentTaskID == task?.id
+                    }.isEmpty)
+            )
+
+            if !isParentTask && !repeatsWeekly {
+
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionLabel("BELONGS TO")
+
+                    Picker(
+                        "Parent Event",
+                        selection: $selectedParentID
+                    ) {
+                        Text("No Parent — Standalone Task")
+                            .tag(nil as UUID?)
+
+                        ForEach(availableParents) { parent in
+                            Text(parent.title)
+                                .tag(Optional(parent.id))
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+
+                    Text(
+                        "Choose a parent event that fully contains this task's scheduled time."
+                    )
+                    .font(.system(size: 11))
+                    .foregroundStyle(Noir.muted)
+                }
+            }
+
+            if isParentTask {
+                Label(
+                    "You can place other calendar tasks inside this event.",
+                    systemImage: "square.on.square"
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(Noir.muted)
+            }
+
+            if task?.isParentTask == true {
+                let children = store.tasks.filter {
+                    $0.parentTaskID == task?.id
+                }
+
+                if !children.isEmpty {
+                    VStack(alignment: .leading, spacing: 5) {
+                        sectionLabel("CHILD EVENTS")
+
+                        ForEach(children) { child in
+                            HStack(spacing: 7) {
+                                Circle()
+                                    .fill(Color(hex: child.colorHex))
+                                    .frame(width: 7, height: 7)
+
+                                Text(child.title)
+                                    .font(.system(size: 12))
+
+                                Spacer()
+
+                                Text(
+                                    child.start.formatted(
+                                        date: .omitted,
+                                        time: .shortened
+                                    )
+                                )
+                                .font(.system(size: 10))
+                                .foregroundStyle(Noir.muted)
+                            }
+                        }
+
+                        Text(
+                            "The parent must contain every child event's full time range."
+                        )
+                        .font(.system(size: 11))
+                        .foregroundStyle(Noir.muted)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(Noir.field.opacity(0.45))
+        .clipShape(
+            RoundedRectangle(cornerRadius: 12)
+        )
+        .onChange(of: repeatsWeekly) { _, repeats in
+            if repeats {
+                isParentTask = false
+                selectedParentID = nil
+            }
+        }
+        .onChange(of: isParentTask) { _, newValue in
+            if newValue {
+                selectedParentID = nil
+            }
+        }
+        .onChange(of: start) { _, _ in
+            clearInvalidParent()
+        }
+        .onChange(of: end) { _, _ in
+            clearInvalidParent()
+        }
+    }
+
+    private func clearInvalidParent() {
+        guard let selectedParentID else { return }
+
+        if !availableParents.contains(where: {
+            $0.id == selectedParentID
+        }) {
+            self.selectedParentID = nil
+        }
+    }
+
     // MARK: - Tags and Subtags
 
     private var selectedTag: DaybookTag? {
-        tagStore.tags.first { $0.id == selectedTagID }
+        tagStore.tags.first {
+            $0.id == selectedTagID
+        }
     }
 
     private var selectedSubtag: DaybookSubtag? {
@@ -364,6 +556,7 @@ struct TaskEditor: View {
 
     private var tagSection: some View {
         VStack(alignment: .leading, spacing: 14) {
+
             sectionLabel("ORGANIZATION")
 
             HStack(spacing: 12) {
@@ -406,13 +599,7 @@ struct TaskEditor: View {
             if let tag = selectedTag {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("TAG PALETTE")
-                            .font(.system(
-                                size: 10,
-                                weight: .semibold
-                            ))
-                            .tracking(1.3)
-                            .foregroundStyle(Noir.muted)
+                        sectionLabel("TAG PALETTE")
 
                         Spacer()
 
@@ -422,7 +609,10 @@ struct TaskEditor: View {
                     }
 
                     HStack(spacing: 9) {
-                        ForEach(tag.palette.colors, id: \.self) { hex in
+                        ForEach(
+                            tag.palette.colors,
+                            id: \.self
+                        ) { hex in
                             Button {
                                 colorHex = hex
                             } label: {
@@ -434,22 +624,26 @@ struct TaskEditor: View {
                                     .frame(height: 42)
                                     .overlay {
                                         if colorHex == hex {
-                                            Image(systemName: "checkmark")
-                                                .font(.system(
-                                                    size: 14,
-                                                    weight: .bold
-                                                ))
-                                                .foregroundStyle(.white)
+                                            Image(
+                                                systemName: "checkmark"
+                                            )
+                                            .font(.system(
+                                                size: 14,
+                                                weight: .bold
+                                            ))
+                                            .foregroundStyle(.white)
                                         }
                                     }
                                     .overlay {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(
-                                                colorHex == hex
-                                                    ? Color.white
-                                                    : Color.clear,
-                                                lineWidth: 2
-                                            )
+                                        RoundedRectangle(
+                                            cornerRadius: 8
+                                        )
+                                        .stroke(
+                                            colorHex == hex
+                                            ? Color.white
+                                            : Color.clear,
+                                            lineWidth: 2
+                                        )
                                     }
                             }
                             .buttonStyle(.plain)
@@ -473,7 +667,10 @@ struct TaskEditor: View {
                         Spacer()
 
                         Text(colorHex.uppercased())
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(.system(
+                                size: 10,
+                                design: .monospaced
+                            ))
                             .foregroundStyle(Noir.muted)
                     }
                 }
@@ -482,7 +679,9 @@ struct TaskEditor: View {
         }
         .padding(14)
         .background(Noir.field.opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(
+            RoundedRectangle(cornerRadius: 12)
+        )
         .onChange(of: selectedTagID) { _, newID in
             selectedSubtagID = nil
 
@@ -503,8 +702,6 @@ struct TaskEditor: View {
         }
     }
 
-
-
     // MARK: - Colors
 
     private var colorPicker: some View {
@@ -523,7 +720,10 @@ struct TaskEditor: View {
                 .foregroundStyle(Noir.muted)
             }
 
-            LazyVGrid(columns: columns, spacing: 12) {
+            LazyVGrid(
+                columns: columns,
+                spacing: 12
+            ) {
                 ForEach(TaskPalette.colors) { shade in
                     Button {
                         colorHex = shade.hex
@@ -533,15 +733,18 @@ struct TaskEditor: View {
                             .frame(height: 43)
                             .overlay {
                                 if colorHex == shade.hex {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.white)
+                                    Image(
+                                        systemName: "checkmark"
+                                    )
+                                    .foregroundStyle(.white)
                                 }
                             }
                             .overlay {
                                 RoundedRectangle(cornerRadius: 8)
                                     .stroke(
                                         colorHex == shade.hex
-                                        ? .white : .clear,
+                                        ? Color.white
+                                        : Color.clear,
                                         lineWidth: 2
                                     )
                             }
@@ -553,7 +756,7 @@ struct TaskEditor: View {
         }
     }
 
-    // MARK: - Subtasks
+    // MARK: - Checklist Subtasks
 
     private var subtasksEditor: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -632,6 +835,7 @@ struct TaskEditor: View {
 
     private var editorFooter: some View {
         HStack(spacing: 16) {
+
             if let task {
                 Button(role: .destructive) {
                     if task.repeatsWeekly {
@@ -696,6 +900,10 @@ struct TaskEditor: View {
             subtasks = task.subtasks
             repeatsWeekly = task.repeatsWeekly
             repeatDays = task.repeatDays
+
+            isParentTask = task.isParentTask
+            selectedParentID = task.parentTaskID
+
         } else {
             let beginning = Calendar.current.startOfDay(
                 for: initialDate
@@ -722,29 +930,41 @@ struct TaskEditor: View {
         newSubtask = ""
     }
 
+    // MARK: - Save Task
+
     private func saveTask() {
         guard valid else { return }
 
-        save(
-            CalendarTask(
-                id: task?.id ?? UUID(),
-                title: title.trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                ),
-                start: start,
-                end: end,
-                colorHex: colorHex,
-                notes: notes,
-                subtasks: subtasks,
-                tagID: selectedTagID,
-                subtagID: selectedSubtagID,
-                repeatsWeekly: repeatsWeekly,
-                repeatDays: repeatsWeekly ? repeatDays : [],
-                completedOccurrences:
-                    task?.completedOccurrences ?? [:],
-                excludedDates:
-                    task?.excludedDates ?? []
-            )
+        let parentID: UUID? =
+            (!isParentTask && !repeatsWeekly)
+            ? selectedParentID
+            : nil
+
+        var updated = CalendarTask(
+            id: task?.id ?? UUID(),
+            title: title.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ),
+            start: start,
+            end: end,
+            colorHex: colorHex,
+            notes: notes,
+            subtasks: subtasks,
+            tagID: selectedTagID,
+            subtagID: selectedSubtagID,
+            repeatsWeekly: repeatsWeekly,
+            repeatDays: repeatsWeekly ? repeatDays : [],
+            completedOccurrences:
+                task?.completedOccurrences ?? [:],
+            excludedDates:
+                task?.excludedDates ?? []
         )
+
+        updated.isParentTask =
+            isParentTask && !repeatsWeekly
+
+        updated.parentTaskID = parentID
+
+        save(updated)
     }
 }

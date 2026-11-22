@@ -74,6 +74,7 @@ struct DaybookView: View {
         .sheet(item: $editorRequest) { request in
             TaskEditor(
                 tagStore: tagStore,
+                store: store,
                 task: request.task,
                 initialDate: selectedDate,
                 occurrenceDate: request.task?.occurrenceDate,
