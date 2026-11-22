@@ -276,4 +276,60 @@ final class TaskStore: ObservableObject {
 
         tasks[index] = updated
     }
+    
+    // MARK: - Parent Calendar Tasks
+
+    func children(of parent: CalendarTask) -> [CalendarTask] {
+        tasks
+            .filter { $0.parentTaskID == parent.id }
+            .sorted { $0.start < $1.start }
+    }
+
+    func assignToParent(
+        childID: UUID,
+        parentID: UUID
+    ) {
+        guard childID != parentID,
+              let parent = tasks.first(where: {
+                  $0.id == parentID && $0.isParentTask
+              }),
+              let childIndex = tasks.firstIndex(where: {
+                  $0.id == childID
+              })
+        else {
+            return
+        }
+
+        guard !parent.repeatsWeekly,
+              !tasks[childIndex].repeatsWeekly,
+              !tasks[childIndex].isParentTask,
+              tasks[childIndex].start >= parent.start,
+              tasks[childIndex].end <= parent.end
+        else {
+            return
+        }
+
+        tasks[childIndex].parentTaskID = parentID
+    }
+
+    func removeFromParent(childID: UUID) {
+        guard let index = tasks.firstIndex(where: {
+            $0.id == childID
+        }) else {
+            return
+        }
+
+        tasks[index].parentTaskID = nil
+    }
+
+    func deleteParent(_ parent: CalendarTask) {
+        for index in tasks.indices {
+            if tasks[index].parentTaskID == parent.id {
+                tasks[index].parentTaskID = nil
+            }
+        }
+
+        tasks.removeAll { $0.id == parent.id }
+    }
+
 }
