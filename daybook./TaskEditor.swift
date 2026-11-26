@@ -424,9 +424,9 @@ struct TaskEditor: View {
                 repeatsWeekly
                 || selectedParentID != nil
                 || (task?.isParentTask == true
-                    && !store.tasks.filter {
+                    && store.tasks.contains {
                         $0.parentTaskID == task?.id
-                    }.isEmpty)
+                    })
             )
 
             if !isParentTask && !repeatsWeekly {
