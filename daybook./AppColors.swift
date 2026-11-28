@@ -77,7 +77,7 @@ enum TaskPalette {
         .init(name: "Steel Blue", hex: "#596A90"),
         .init(name: "Periwinkle", hex: "#8295BA"),
         .init(name: "Cloud Blue", hex: "#B7C3DC"),
-        .init(name: "Dark Lavender", hex: "#51465F"),
+        .init(name: "DarRk Lavender", hex: "#51465F"),
         .init(name: "Amethyst", hex: "#76658B"),
         .init(name: "Lilac", hex: "#A08DB5"),
         .init(name: "Lavender", hex: "#C8B9D5"),
